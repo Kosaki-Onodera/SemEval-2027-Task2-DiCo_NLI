@@ -28,8 +28,13 @@ dev/dico_nli_dev_track1_reference.csv
 
 ```python
 !nvidia-smi
+!pip uninstall -y torchao
 !pip install -q "peft>=0.14" "accelerate>=1.0"
 ```
+
+Kaggle images can contain an old optional `torchao` package. Recent PEFT
+versions reject `torchao<0.16.0` before LoRA is attached. Standard LoRA in this
+project does not use torchao, so it is safe to uninstall it in the notebook.
 
 不要重新安装 PyTorch，也不要直接执行 `pip install -r requirements.txt`，避免覆盖 Kaggle 镜像中的 CUDA PyTorch。
 
