@@ -75,11 +75,16 @@ class Model:
         texts_first: np.ndarray
         texts_second: np.ndarray
 
+        separator: str = self.tokenizer.sep_token or "[SEP]"
+        combined_texts: List[str] = [
+            f"{first} {separator} {second}"
+            for first, second in zip(texts_first, texts_second)
+        ]
+
         encs: BatchEncoding = self.tokenizer(
-            list(texts_first),
-            list(texts_second),
+            combined_texts,
             padding="max_length",
-            truncation="only_second",
+            truncation=True,
             return_tensors="pt",
             max_length=self.max_length,
         )

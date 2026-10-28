@@ -32,7 +32,8 @@ class NLIDataset(Dataset):
 
         # Add labels only if they were provided
         if self.labels is not None:
-            item["labels"] = torch.from_numpy(self.labels[idx])
+            # LabelEncoder returns np.int_ which is int32 on Windows; cross-entropy needs int64.
+            item["labels"] = torch.from_numpy(self.labels[idx]).long()
 
         # Add token_type_ids if available
         if "token_type_ids" in self.X:

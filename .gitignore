@@ -154,11 +154,13 @@ activemq-data/
 .env
 .envrc
 .venv
+starter_kit/.venv*/
 env/
 venv/
 ENV/
 env.bak/
 venv.bak/
+starter_kit/dicoNLI/
 
 # Spyder project settings
 .spyderproject
@@ -219,3 +221,8 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# Local model weights and experiment outputs
+starter_kit/models/
+starter_kit/results/*
+!starter_kit/results/.gitkeep
