@@ -1,11 +1,11 @@
 from typing import Union, Dict, Tuple, Optional, List
 from tqdm import tqdm
 import optuna
+import math
 import os
 import random
 import csv
 import sys
-from datetime import datetime
 from pathlib import Path
 import numpy as np
 import pandas as pd
@@ -54,6 +54,8 @@ class Trainer:
         self.params.setdefault("optuna", None)
         self.params.setdefault("results_dir", "results")
         self.params.setdefault("reference_path", None)
+        self.params.setdefault("gradient_accumulation_steps", 1)
+        self.params.setdefault("deterministic", True)
         print(self.params)
 
         # Set seeds for reproducibility
@@ -125,14 +127,19 @@ class Trainer:
         torch.cuda.manual_seed(seed)
         torch.cuda.manual_seed_all(seed)
         os.environ["PYTHONHASHSEED"] = str(seed)
-        os.environ["CUDA_LAUNCH_BLOCKING"] = "1"
-        os.environ["CUBLAS_WORKSPACE_CONFIG"] = ":16:8"
-        os.environ["ASCEND_LAUNCH_BLOCKING"] = "1"
-        os.environ["HCCL_DETERMINISTIC"] = "1"
-        os.environ["FLASH_ATTENTION_DETERMINISTIC"] = "1"
-        torch.use_deterministic_algorithms(True)
-        torch.backends.cudnn.benchmark = False
-        torch.backends.cudnn.deterministic = True
+        use_deterministic = bool(self.params["deterministic"]) and not bool(self.params.get("load_in_4bit", False))
+        if use_deterministic:
+            os.environ["CUDA_LAUNCH_BLOCKING"] = "1"
+            os.environ["CUBLAS_WORKSPACE_CONFIG"] = ":16:8"
+            os.environ["ASCEND_LAUNCH_BLOCKING"] = "1"
+            os.environ["HCCL_DETERMINISTIC"] = "1"
+            os.environ["FLASH_ATTENTION_DETERMINISTIC"] = "1"
+            torch.use_deterministic_algorithms(True)
+            torch.backends.cudnn.benchmark = False
+            torch.backends.cudnn.deterministic = True
+        else:
+            print("Deterministic PyTorch algorithms disabled.")
+            torch.use_deterministic_algorithms(False)
         g = torch.Generator()
         g.manual_seed(seed)
         return g
@@ -170,9 +177,17 @@ class Trainer:
         weight_decay = float(self.params["wd"])
         num_epochs = int(self.params["num_epochs"])
         warmup_pct = float(self.params["warmup_pcrt"])
+        gradient_accumulation_steps = int(self.params["gradient_accumulation_steps"])
+        trainable_parameters = [
+            parameter
+            for parameter in self.model.parameters()
+            if parameter.requires_grad
+        ]
+        if not trainable_parameters:
+            raise RuntimeError("No trainable parameters were found.")
 
         optimizer = torch.optim.AdamW(
-            params=self.model.parameters(),
+            params=trainable_parameters,
             lr=lr,
             weight_decay=weight_decay,
             betas=(0.9, 0.999),
@@ -180,7 +195,8 @@ class Trainer:
         )
 
         train_data_len: int = len(self.train_dataloader)
-        total_training_steps: int = train_data_len * num_epochs
+        optimizer_steps_per_epoch = math.ceil(train_data_len / gradient_accumulation_steps)
+        total_training_steps: int = optimizer_steps_per_epoch * num_epochs
         warmup_steps = int(total_training_steps * warmup_pct)
 
         scheduler = transformers.get_linear_schedule_with_warmup(
@@ -190,27 +206,41 @@ class Trainer:
         )
 
         print("\nStarting training loop:")
+        print(f"Micro-batch size: {self.params['batch_size']}")
+        print(f"Gradient accumulation steps: {gradient_accumulation_steps}")
+        print(
+            "Effective batch size: "
+            f"{int(self.params['batch_size']) * gradient_accumulation_steps}"
+        )
+        print(f"Trainable parameters: {sum(parameter.numel() for parameter in trainable_parameters):,}")
 
         for epoch in range(num_epochs):
             print(f"\n>>> Epoch {epoch + 1}/{num_epochs}")
             self.model.train()
             epoch_loss = 0.0
+            optimizer.zero_grad(set_to_none=True)
 
-            for batch in tqdm(self.train_dataloader):
-                optimizer.zero_grad()
+            for batch_index, batch in enumerate(tqdm(self.train_dataloader), start=1):
                 outputs: SequenceClassifierOutput = self.model.forward(batch=batch, device=self.device)
                 loss: torch.Tensor = outputs.loss
-                loss.backward()
-                torch.nn.utils.clip_grad_norm_(parameters=self.model.parameters(), max_norm=1.0)
-                optimizer.step()
-                scheduler.step()
                 epoch_loss += loss.item()
+                (loss / gradient_accumulation_steps).backward()
+
+                should_update = (
+                    batch_index % gradient_accumulation_steps == 0
+                    or batch_index == train_data_len
+                )
+                if should_update:
+                    torch.nn.utils.clip_grad_norm_(parameters=trainable_parameters, max_norm=1.0)
+                    optimizer.step()
+                    scheduler.step()
+                    optimizer.zero_grad(set_to_none=True)
 
             avg_loss = epoch_loss / train_data_len
             print(f"Epoch {epoch + 1} average loss: {avg_loss:.4f}")
 
             if self.params["do_dev"]:
-                results:Dict[str, Union[float, np.ndarray]] = self.evaluation_loop(partition="dev", print_results=True)
+                results:Dict[str, Union[float, np.ndarray]] = self.evaluation_loop(partition="dev", print_results=True, tag=f"epoch{epoch + 1}")
                 if self.params["optuna"] is not None:
                     
                     # Set another metric to report if needed 
@@ -218,6 +248,12 @@ class Trainer:
                     self.params["optuna"].report(value=results["f1_weighted"], step=(epoch + 1))
                     if self.params["optuna"].should_prune():
                         raise optuna.TrialPruned()
+
+            if self.params.get("save_path") is not None and self.params.get("use_lora", False):
+                checkpoint_path = Path(str(self.params["save_path"])) / "checkpoints" / f"epoch_{epoch + 1}"
+                checkpoint_path.mkdir(parents=True, exist_ok=True)
+                print(f"Saving LoRA adapter for epoch {epoch + 1} to: {checkpoint_path}")
+                self.model.save(path=str(checkpoint_path))
             
             if self.params["epoch_to_stop"] is not None and (epoch + 1) == int(self.params["epoch_to_stop"]):
                 print(f"Stopping at epoch {epoch + 1} as specified.")
@@ -227,7 +263,11 @@ class Trainer:
             print(f"Saving model in path: {self.params['save_path']}")
             self.model.save(path=str(self.params["save_path"]))
 
-    def evaluation_loop(self, partition: str, print_results: bool) -> Optional[Dict[str, Union[float, np.ndarray]]]:
+        if torch.cuda.is_available():
+            peak_gib = torch.cuda.max_memory_allocated() / (1024 ** 3)
+            print(f"Peak CUDA memory allocated during training: {peak_gib:.2f} GiB")
+
+    def evaluation_loop(self, partition: str, print_results: bool, tag: Optional[str] = None) -> Optional[Dict[str, Union[float, np.ndarray]]]:
         self.model.eval()
         if partition == "test":
             dataloader = self.test_dataloader
@@ -260,7 +300,7 @@ class Trainer:
                 decoded_preds: np.ndarray = label_encoder.inverse_transform(y=np.array(preds).ravel())
                 decoded_labels: np.ndarray = label_encoder.inverse_transform(y=np.array(labels).ravel())
                 if self.params["optuna"] is None:
-                    prediction_path = self.write_predictions(ids=ids, labels=decoded_preds, partition=partition)
+                    prediction_path = self.write_predictions(ids=ids, labels=decoded_preds, partition=partition, tag=tag)
                     self.score_official_predictions(prediction_path=prediction_path, partition=partition)
 
                 print(f"\nEvaluation results on {partition} set:")
@@ -298,19 +338,19 @@ class Trainer:
                 
                 preds = label_encoder.inverse_transform(y=np.array(preds).ravel())
                 if self.params["optuna"] is None:
-                    prediction_path = self.write_predictions(ids=ids, labels=preds, partition=partition)
+                    prediction_path = self.write_predictions(ids=ids, labels=preds, partition=partition, tag=tag)
                     self.score_official_predictions(prediction_path=prediction_path, partition=partition)
 
                 for id, sent, pred in zip(ids, sentences, preds):
                     print(f"ID: {id} | Sentence: {sent} | Predicted: {pred}")
         return results
 
-    def write_predictions(self, ids: List[str], labels: np.ndarray, partition: str) -> Path:
+    def write_predictions(self, ids: List[str], labels: np.ndarray, partition: str, tag: Optional[str] = None) -> Path:
         results_dir = Path(str(self.params["results_dir"]))
         results_dir.mkdir(parents=True, exist_ok=True)
 
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
-        output_path = results_dir / f"predictions_{partition}_{timestamp}.csv"
+        stem = f"predictions_{partition}_{tag}" if tag else f"predictions_{partition}"
+        output_path = results_dir / f"{stem}.csv"
 
         with output_path.open("w", newline="", encoding="utf-8") as handle:
             writer = csv.DictWriter(handle, fieldnames=["instance_id", "label"], lineterminator="\n")

@@ -152,9 +152,20 @@ starter_kit/
 | `--dropout`         | `float` | No       | Dropout rate (0–0.5).                                                                                                    |
 | `--warmup_pcrt`     | `float` | No       | Fraction of training steps for linear learning rate warmup (0–0.1, step 0.01).                                           |
 | `--lr`              | `float` | No       | Learning rate for the optimizer (common values: 1e-6 to 1e-4).                                                           |
-| `--batch_size`      | `int`   | No       | Batch size for training and evaluation (multiple of 8, ≤64).                                                             |
+| `--batch_size`      | `int`   | No       | Micro-batch size for training and evaluation (1–64).                                                                     |
 | `--wd`              | `float` | No       | Weight decay for the optimizer (common values: 1e-6 to 1e-1).                                                            |
 | `--num_epochs`      | `int`   | No       | Number of training epochs (1–10).                                                                                        |
+| `--gradient_accumulation_steps` | `int` | No | Number of micro-batches accumulated into one optimizer step. Default: `1`.                                      |
+| `--use_lora`        | `bool`  | No       | Wrap the classification model with a PEFT LoRA adapter.                                                                  |
+| `--load_in_4bit`    | `bool`  | No       | Load the base model in 4-bit NF4 for QLoRA. Requires `--use_lora`.                                                       |
+| `--lora_r`          | `int`   | No       | LoRA rank. Default: `16`.                                                                                                 |
+| `--lora_alpha`      | `int`   | No       | LoRA scaling alpha. Default: `32`.                                                                                        |
+| `--lora_dropout`    | `float` | No       | Dropout applied to LoRA layers. Default: `0.05`.                                                                          |
+| `--lora_target_modules` | `str` | No     | Comma-separated target modules. Default for DeBERTa-v2: `query_proj,value_proj`.                                        |
+| `--adapter_path`    | `str`   | No       | Existing PEFT adapter directory for continued training or inference.                                                    |
+| `--gradient_checkpointing` | `bool` | No | Trade compute for lower activation memory.                                                                             |
+| `--compute_dtype`   | `str`   | No       | `float16`, `bfloat16`, or `float32`. Use `float16` on T4/P100.                                                            |
+| `--deterministic`   | `bool`  | No       | Enable deterministic algorithms. Automatically disabled for 4-bit models.                                                |
 | `--is_optuna_trial` | `bool`  | Yes      | Whether this run is an Optuna hyperparameter optimization trial.                                                         |
 | `--study_name`      | `str`   | No       | Name of the Optuna study.                                                                                                |
 | `--storage_name`    | `str`   | No       | Name of the Optuna storage.                                                                                              |
@@ -201,6 +212,56 @@ python3 -u "${projectPath}/main.py" \
 
 Optionally add `--save_path` to save the fine-tuned model and
 `--epoch_to_stop` to stop after a selected epoch.
+
+### DeBERTa-v2-xxlarge LoRA Example
+
+Unsloth's `FastLanguageModel` is designed for supported decoder language
+models and is not a drop-in loader for the DeBERTa-v2 encoder used here. For
+DeBERTa-v2-xxlarge, use Transformers and PEFT LoRA instead.
+
+The following example uses a micro-batch size of 1 and gradient accumulation of
+16, giving an effective batch size of 16. The base model remains in 16-bit
+precision; `--load_in_4bit` is optional and should only be added when GPU memory
+is insufficient.
+
+```bash
+python3 -u main.py \
+    --model_path "microsoft/deberta-v2-xxlarge" \
+    --tokenizer_path "microsoft/deberta-v2-xxlarge" \
+    --do_train \
+    --train_path "../final_data/train/dico_nli_train_track1_participant_labeled.csv" \
+    --do_dev \
+    --dev_path "../final_data/dev/dico_nli_dev_track1_participant_labeled.csv" \
+    --no-do_test \
+    --seed 42 \
+    --dropout 0.1 \
+    --warmup_pcrt 0.03 \
+    --lr 1e-4 \
+    --batch_size 1 \
+    --gradient_accumulation_steps 16 \
+    --wd 1e-5 \
+    --num_epochs 3 \
+    --no-is_optuna_trial \
+    --max_length 128 \
+    --use_lora \
+    --gradient_checkpointing \
+    --compute_dtype float16 \
+    --lora_r 16 \
+    --lora_alpha 32 \
+    --lora_dropout 0.05 \
+    --lora_target_modules "query_proj,value_proj" \
+    --no-deterministic \
+    --results_dir "results/deberta_v2_xxlarge_lora" \
+    --reference_path "../final_data/dev/dico_nli_dev_track1_reference.csv" \
+    --save_path "results/deberta_v2_xxlarge_lora"
+```
+
+This saves a PEFT adapter and tokenizer, not a full copy of the xxlarge base
+model. To evaluate it later, use the same base model and pass the adapter
+directory through `--adapter_path`.
+
+If Standard LoRA runs out of memory, add `--load_in_4bit` to use the optional
+QLoRA path.
 
 **Hyperparameter search using Optuna: ([check file here](SLURM/dummy_optuna.slurm))**
 

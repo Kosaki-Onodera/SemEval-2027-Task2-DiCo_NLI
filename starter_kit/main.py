@@ -8,7 +8,7 @@ import gc
 from optuna.trial import *
 
 def objective(trial: optuna.trial.Trial, params: Dict[str, Union[str, int, float, bool, None]]):
-    params["batch_size"] = trial.suggest_int(name="batch_size", low=8, high=64, step=8)
+    params["batch_size"] = trial.suggest_int(name="batch_size", low=1, high=64, step=1)
     params["num_epochs"] = trial.suggest_int(name="num_epochs", low=1, high=10, step=1)
     params["lr"] = trial.suggest_categorical(name="lr", choices=[1e-6, 5e-6, 8e-6, 9e-6, 1e-5, 1.5e-5, 2e-5, 2.5e-5, 3e-5, 4e-5, 5e-5, 8e-5, 1e-4])
     params["wd"] = trial.suggest_categorical(name="wd", choices=[1e-6, 5e-6, 8e-6, 1e-5, 5e-5, 1e-4, 5e-4, 1e-3, 5e-3, 1e-2, 5e-2, 1e-1])
@@ -42,9 +42,20 @@ if __name__ == "__main__":
     parser.add_argument("--dropout", type=float, help="Dropout rate (between 0 and 0.5).")
     parser.add_argument("--warmup_pcrt", type=float, help="Percentage of training steps to perform linear learning rate warmup for (between 0 and 0.1 and a step of 0.01).")
     parser.add_argument("--lr", type=float, help="Learning rate for the optimizer ([1e-6, 5e-6, 8e-6, 9e-6, 1e-5, 1.5e-5, 2e-5, 2.5e-5, 3e-5, 4e-5, 5e-5, 8e-5, 1e-4]).")
-    parser.add_argument("--batch_size", type=int, help="Batch size for training and evaluation (multiple of 8 and less than 64).")
+    parser.add_argument("--batch_size", type=int, help="Micro-batch size for training and evaluation (between 1 and 64).")
     parser.add_argument("--wd", type=float, help="Weight decay for the optimizer. ([1e-6, 5e-6, 8e-6, 1e-5, 5e-5, 1e-4, 5e-4, 1e-3, 5e-3, 1e-2, 5e-2, 1e-1])")
     parser.add_argument("--num_epochs", type=int, help="Number of training epochs (between 1 and 10).")
+    parser.add_argument("--gradient_accumulation_steps", type=int, default=1, help="Number of micro-batches accumulated into one optimizer step.")
+    parser.add_argument("--use_lora", action=argparse.BooleanOptionalAction, default=False, help="Wrap the classification model with a PEFT LoRA adapter.")
+    parser.add_argument("--load_in_4bit", action=argparse.BooleanOptionalAction, default=False, help="Load the base model in 4-bit NF4 for QLoRA training.")
+    parser.add_argument("--lora_r", type=int, default=16, help="LoRA rank.")
+    parser.add_argument("--lora_alpha", type=int, default=32, help="LoRA scaling alpha.")
+    parser.add_argument("--lora_dropout", type=float, default=0.05, help="Dropout applied to LoRA layers.")
+    parser.add_argument("--lora_target_modules", type=str, default="query_proj,value_proj", help="Comma-separated LoRA target module names.")
+    parser.add_argument("--adapter_path", type=str, help="Optional existing PEFT adapter directory to load for training or inference.")
+    parser.add_argument("--gradient_checkpointing", action=argparse.BooleanOptionalAction, default=False, help="Trade compute for lower activation memory.")
+    parser.add_argument("--compute_dtype", choices=["float16", "bfloat16", "float32"], default="float16", help="Compute dtype for model loading and 4-bit activations.")
+    parser.add_argument("--deterministic", action=argparse.BooleanOptionalAction, default=True, help="Enable deterministic PyTorch algorithms. Disabled automatically for 4-bit models.")
 
     parser.add_argument("--is_optuna_trial", action=argparse.BooleanOptionalAction, help="Whether this run is an Optuna hyperparameter optimization trial.", required=True)
     parser.add_argument("--study_name", type=str, help="Optuna study name")
@@ -70,7 +81,7 @@ if __name__ == "__main__":
             assert args.lr in [1e-6, 5e-6, 8e-6, 9e-6, 1e-5, 1.5e-5, 2e-5, 2.5e-5, 3e-5, 4e-5, 5e-5, 8e-5, 1e-4], "Learning rate must be one of the following: [1e-6, 5e-6, 8e-6, 9e-6, 1e-5, 1.5e-5, 2e-5, 2.5e-5, 3e-5, 4e-5, 5e-5, 8e-5, 1e-4]"
             assert args.wd in [1e-6, 5e-6, 8e-6, 1e-5, 5e-5, 1e-4, 5e-4, 1e-3, 5e-3, 1e-2, 5e-2, 1e-1], "Weight decay must be one of the following: [1e-6, 5e-6, 8e-6, 1e-5, 5e-5, 1e-4, 5e-4, 1e-3, 5e-3, 1e-2, 5e-2, 1e-1]"
             assert 1 <= args.num_epochs <= 10, "--num_epochs must be between 1 and 10."
-            assert 8 <= args.batch_size <= 64 and args.batch_size % 8 == 0, "--batch_size must be a multiple of 8 and less than or equal to 64."
+            assert 1 <= args.batch_size <= 64, "--batch_size must be between 1 and 64."
         if args.do_dev:
             assert args.dev_path is not None and os.path.isfile(path=args.dev_path), "A valid --dev_path must be specified when --do_dev is True."
 
@@ -79,7 +90,15 @@ if __name__ == "__main__":
     
     if args.do_test:
         assert args.test_path is not None and os.path.isfile(path=args.test_path), "A valid --test_path must be specified when --do_test is True."
-        assert 8 <= args.batch_size <= 64 and args.batch_size % 8 == 0, "--batch_size must be a multiple of 8 and less than or equal to 64."
+        assert 1 <= args.batch_size <= 64, "--batch_size must be between 1 and 64."
+
+    assert args.gradient_accumulation_steps >= 1, "--gradient_accumulation_steps must be at least 1."
+    assert args.lora_r > 0, "--lora_r must be positive."
+    assert args.lora_alpha > 0, "--lora_alpha must be positive."
+    assert 0 <= args.lora_dropout <= 1, "--lora_dropout must be between 0 and 1."
+    assert 0 < args.warmup_pcrt <= 0.1 if args.warmup_pcrt is not None else True, "--warmup_pcrt must be greater than 0 and no more than 0.1."
+    assert args.adapter_path is None or args.use_lora, "--adapter_path requires --use_lora."
+    assert not args.load_in_4bit or args.use_lora, "--load_in_4bit is intended for QLoRA and requires --use_lora."
     
     if any(arg is not None for arg in [args.num_epochs, args.lr, args.wd, args.warmup_pcrt]):
         assert args.do_train, "Some hyperparameters were set but training is disabled"  
@@ -122,6 +141,17 @@ if __name__ == "__main__":
         "batch_size": args.batch_size,
         "wd": args.wd,
         "num_epochs": args.num_epochs,
+        "gradient_accumulation_steps": args.gradient_accumulation_steps,
+        "use_lora": args.use_lora,
+        "load_in_4bit": args.load_in_4bit,
+        "lora_r": args.lora_r,
+        "lora_alpha": args.lora_alpha,
+        "lora_dropout": args.lora_dropout,
+        "lora_target_modules": args.lora_target_modules,
+        "adapter_path": args.adapter_path,
+        "gradient_checkpointing": args.gradient_checkpointing,
+        "compute_dtype": args.compute_dtype,
+        "deterministic": args.deterministic,
         "save_path": args.save_path,
         "epoch_to_stop": args.epoch_to_stop,
         "results_dir": args.results_dir,
