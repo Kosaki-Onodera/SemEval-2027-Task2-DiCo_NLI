@@ -114,7 +114,10 @@ class Model:
                 lora_alpha=int(params.get("lora_alpha", 32)),
                 lora_dropout=float(params.get("lora_dropout", 0.05)),
                 target_modules=target_modules,
-                modules_to_save=["classifier"],
+                # DeBERTa-v2 creates a random task-specific pooler when loading
+                # the base masked-LM checkpoint. It must stay trainable together
+                # with the classifier instead of remaining a frozen random layer.
+                modules_to_save=["classifier", "pooler"],
                 bias="none",
             )
             self.model = get_peft_model(self.model, lora_config)
