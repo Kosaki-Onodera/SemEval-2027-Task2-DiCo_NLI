@@ -61,7 +61,10 @@ class Model:
             model_kwargs["device_map"] = "auto"
             model_kwargs["torch_dtype"] = self.compute_dtype
         elif self.use_lora:
-            model_kwargs["torch_dtype"] = self.compute_dtype
+            # Keep trainable LoRA master weights in FP32 and use autocast in the
+            # trainer. DeBERTa-v2-xxlarge is unstable when all weights are
+            # converted directly to FP16.
+            model_kwargs["torch_dtype"] = torch.float32
 
         self.model = AutoModelForSequenceClassification.from_pretrained(**model_kwargs)
 

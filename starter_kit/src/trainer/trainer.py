@@ -63,6 +63,18 @@ class Trainer:
 
         # Cuda configuration
         self.device: torch.device = self.configure_cuda()
+        self.amp_dtype = self._resolve_amp_dtype(str(self.params.get("compute_dtype", "float16")))
+        self.amp_enabled = (
+            bool(self.params.get("use_lora", False))
+            and self.device.type == "cuda"
+            and self.amp_dtype != torch.float32
+        )
+        self.scaler = torch.amp.GradScaler(
+            "cuda",
+            enabled=self.amp_enabled and self.amp_dtype == torch.float16,
+        )
+        if self.amp_enabled:
+            print(f"Mixed precision enabled with dtype: {self.amp_dtype}")
 
         # Load dico datasets
         if params["do_train"]:
@@ -156,6 +168,17 @@ class Trainer:
             print()
         return device
 
+    @staticmethod
+    def _resolve_amp_dtype(name: str) -> torch.dtype:
+        dtypes = {
+            "float16": torch.float16,
+            "bfloat16": torch.bfloat16,
+            "float32": torch.float32,
+        }
+        if name not in dtypes:
+            raise ValueError(f"Unsupported compute dtype: {name}")
+        return dtypes[name]
+
     def load_dataset(self, path: str) -> Tuple[np.ndarray, np.ndarray, Optional[np.ndarray]]:
         ids, X, y = read_transform_dico(path=path)
         ids: np.ndarray
@@ -221,18 +244,27 @@ class Trainer:
             optimizer.zero_grad(set_to_none=True)
 
             for batch_index, batch in enumerate(tqdm(self.train_dataloader), start=1):
-                outputs: SequenceClassifierOutput = self.model.forward(batch=batch, device=self.device)
+                with torch.autocast(
+                    device_type="cuda",
+                    dtype=self.amp_dtype,
+                    enabled=self.amp_enabled,
+                ):
+                    outputs: SequenceClassifierOutput = self.model.forward(batch=batch, device=self.device)
                 loss: torch.Tensor = outputs.loss
                 epoch_loss += loss.item()
-                (loss / gradient_accumulation_steps).backward()
+                scaled_loss = self.scaler.scale(loss) / gradient_accumulation_steps
+                scaled_loss.backward()
 
                 should_update = (
                     batch_index % gradient_accumulation_steps == 0
                     or batch_index == train_data_len
                 )
                 if should_update:
+                    if self.scaler.is_enabled():
+                        self.scaler.unscale_(optimizer)
                     torch.nn.utils.clip_grad_norm_(parameters=trainable_parameters, max_norm=1.0)
-                    optimizer.step()
+                    self.scaler.step(optimizer)
+                    self.scaler.update()
                     scheduler.step()
                     optimizer.zero_grad(set_to_none=True)
 
@@ -283,7 +315,12 @@ class Trainer:
         
         with torch.no_grad():
             for batch in tqdm(dataloader):
-                outputs: SequenceClassifierOutput = self.model.forward(batch=batch, device=self.device)
+                with torch.autocast(
+                    device_type="cuda",
+                    dtype=self.amp_dtype,
+                    enabled=self.amp_enabled,
+                ):
+                    outputs: SequenceClassifierOutput = self.model.forward(batch=batch, device=self.device)
                 logits: torch.Tensor = outputs.logits
                 batch_preds:List[int] = torch.argmax(input=logits, dim=-1).cpu().numpy().tolist()
                 preds.extend(batch_preds)

@@ -67,7 +67,8 @@ print(SCRIPT_PATH)
 
 ```text
 model = microsoft/deberta-v2-xxlarge
-precision = float16
+weights = FP32 base weights with FP16 autocast
+learning rate = 2e-5
 micro batch = 1
 gradient accumulation = 16
 effective batch = 16
@@ -84,7 +85,7 @@ gradient checkpointing = enabled
 ## 输出位置
 
 ```text
-/kaggle/working/dico_nli_runs/deberta_v2_xxlarge_lora_track1
+/kaggle/working/dico_nli_runs/deberta_v2_xxlarge_lora_track1_amp
 ```
 
 每个 epoch 的 adapter 会保存到：

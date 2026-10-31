@@ -11,6 +11,8 @@ MICRO_BATCH_SIZE="${MICRO_BATCH_SIZE:-1}"
 GRADIENT_ACCUMULATION_STEPS="${GRADIENT_ACCUMULATION_STEPS:-16}"
 EPOCHS="${EPOCHS:-3}"
 COMPUTE_DTYPE="${COMPUTE_DTYPE:-float16}"
+LEARNING_RATE="${LEARNING_RATE:-2e-5}"
+WARMUP_PERCENT="${WARMUP_PERCENT:-0.05}"
 
 KAGGLE_DATA_ROOT="/kaggle/input/datasets/gongbaoxin/dico-nli-dataset/final_data"
 if [[ -z "${DATA_ROOT:-}" ]]; then
@@ -22,7 +24,7 @@ if [[ -z "${DATA_ROOT:-}" ]]; then
 fi
 
 if [[ -d "/kaggle/working" ]]; then
-    DEFAULT_OUTPUT_DIR="/kaggle/working/dico_nli_runs/deberta_v2_xxlarge_lora_track1"
+    DEFAULT_OUTPUT_DIR="/kaggle/working/dico_nli_runs/deberta_v2_xxlarge_lora_track1_amp"
 else
     DEFAULT_OUTPUT_DIR="${SCRIPT_DIR}/results/deberta_v2_xxlarge_lora_track1"
 fi
@@ -55,8 +57,8 @@ mkdir -p "${OUTPUT_DIR}"
     --no-do_test \
     --seed 42 \
     --dropout 0.1 \
-    --warmup_pcrt 0.03 \
-    --lr 1e-4 \
+    --warmup_pcrt "${WARMUP_PERCENT}" \
+    --lr "${LEARNING_RATE}" \
     --batch_size "${MICRO_BATCH_SIZE}" \
     --gradient_accumulation_steps "${GRADIENT_ACCUMULATION_STEPS}" \
     --wd 1e-5 \

@@ -220,9 +220,10 @@ models and is not a drop-in loader for the DeBERTa-v2 encoder used here. For
 DeBERTa-v2-xxlarge, use Transformers and PEFT LoRA instead.
 
 The following example uses a micro-batch size of 1 and gradient accumulation of
-16, giving an effective batch size of 16. The base model remains in 16-bit
-precision; `--load_in_4bit` is optional and should only be added when GPU memory
-is insufficient.
+16, giving an effective batch size of 16. Standard LoRA keeps the base model in
+FP32 and uses FP16/BF16 autocast for stable mixed-precision training.
+`--load_in_4bit` is optional and should only be added when GPU memory is
+insufficient.
 
 ```bash
 python3 -u main.py \
@@ -236,7 +237,7 @@ python3 -u main.py \
     --seed 42 \
     --dropout 0.1 \
     --warmup_pcrt 0.03 \
-    --lr 1e-4 \
+    --lr 2e-5 \
     --batch_size 1 \
     --gradient_accumulation_steps 16 \
     --wd 1e-5 \
