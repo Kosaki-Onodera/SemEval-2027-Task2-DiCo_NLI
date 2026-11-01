@@ -2,10 +2,12 @@ from typing import Union, Dict, Tuple, Optional, List
 from tqdm import tqdm
 import optuna
 import math
+import json
 import os
 import random
 import csv
 import sys
+from collections import deque
 from pathlib import Path
 import numpy as np
 import pandas as pd
@@ -215,6 +217,13 @@ class Trainer:
         warmup_pct = float(self.params["warmup_pcrt"])
         gradient_accumulation_steps = int(self.params["gradient_accumulation_steps"])
         rdrop_alpha = float(self.params.get("rdrop_alpha", 0.0))
+        scl_weight = float(self.params.get("scl_weight", 0.0))
+        scl_temperature = float(self.params.get("scl_temperature", 0.07))
+        scl_min_queue_size = int(self.params.get("scl_min_queue_size", 64))
+        scl_queue_size = int(self.params.get("scl_queue_size", 512))
+        scl_queue_features = deque(maxlen=scl_queue_size)
+        scl_queue_labels = deque(maxlen=scl_queue_size)
+        scl_queue_pair_ids = deque(maxlen=scl_queue_size)
         trainable_parameters = [
             parameter
             for parameter in self.model.parameters()
@@ -246,6 +255,9 @@ class Trainer:
         print(f"Micro-batch size: {self.params['batch_size']}")
         print(f"Gradient accumulation steps: {gradient_accumulation_steps}")
         print(f"R-Drop alpha: {rdrop_alpha}")
+        print(f"SCL weight: {scl_weight}")
+        print(f"SCL temperature: {scl_temperature}")
+        print(f"SCL queue size: {scl_queue_size}")
         print(
             "Effective batch size: "
             f"{int(self.params['batch_size']) * gradient_accumulation_steps}"
@@ -256,6 +268,8 @@ class Trainer:
             print(f"\n>>> Epoch {epoch + 1}/{num_epochs}")
             self.model.train()
             epoch_loss = 0.0
+            epoch_scl_loss = 0.0
+            scl_steps = 0
             optimizer.zero_grad(set_to_none=True)
 
             for batch_index, batch in enumerate(tqdm(self.train_dataloader), start=1):
@@ -279,6 +293,41 @@ class Trainer:
                     else:
                         loss = outputs.loss
 
+                    if scl_weight > 0:
+                        features = self.model.classifier_features()
+                        batch_labels = batch["labels"].detach().view(-1)
+                        batch_pair_ids = [
+                            str(instance_id).split("__", 1)[0]
+                            for instance_id in batch["ids"]
+                        ]
+                        contrastive_loss = self._queue_supervised_contrastive_loss(
+                            features=features,
+                            labels=batch_labels,
+                            pair_ids=batch_pair_ids,
+                            queue_features=scl_queue_features,
+                            queue_labels=scl_queue_labels,
+                            queue_pair_ids=scl_queue_pair_ids,
+                            temperature=scl_temperature,
+                            min_queue_size=scl_min_queue_size,
+                        )
+                        if contrastive_loss is not None:
+                            loss = loss + scl_weight * contrastive_loss
+                            epoch_scl_loss += contrastive_loss.item()
+                            scl_steps += 1
+
+                        normalized_features = torch.nn.functional.normalize(
+                            features.detach().float(),
+                            dim=-1,
+                        )
+                        for feature, label, pair_id in zip(
+                            normalized_features,
+                            batch_labels.tolist(),
+                            batch_pair_ids,
+                        ):
+                            scl_queue_features.append(feature)
+                            scl_queue_labels.append(int(label))
+                            scl_queue_pair_ids.append(pair_id)
+
                 epoch_loss += loss.item()
                 scaled_loss = self.scaler.scale(loss) / gradient_accumulation_steps
                 scaled_loss.backward()
@@ -298,6 +347,8 @@ class Trainer:
 
             avg_loss = epoch_loss / train_data_len
             print(f"Epoch {epoch + 1} average loss: {avg_loss:.4f}")
+            if scl_weight > 0 and scl_steps > 0:
+                print(f"Epoch {epoch + 1} average SCL loss: {epoch_scl_loss / scl_steps:.4f}")
 
             if self.params["do_dev"]:
                 results:Dict[str, Union[float, np.ndarray]] = self.evaluation_loop(partition="dev", print_results=True, tag=f"epoch{epoch + 1}")
@@ -322,6 +373,26 @@ class Trainer:
         if self.params["save_path"] is not None:
             print(f"Saving model in path: {self.params['save_path']}")
             self.model.save(path=str(self.params["save_path"]))
+            config_path = Path(str(self.params["save_path"])) / "training_config.json"
+            config_path.write_text(
+                json.dumps(
+                    {
+                        "params": {
+                            key: value
+                            for key, value in self.params.items()
+                            if key != "optuna"
+                        },
+                        "labels": [str(label) for label in self.labels],
+                        "torch_version": torch.__version__,
+                        "transformers_version": transformers.__version__,
+                    },
+                    indent=2,
+                    sort_keys=True,
+                )
+                + "\n",
+                encoding="utf-8",
+            )
+            print(f"Training config written to: {config_path}")
 
         if torch.cuda.is_available():
             peak_gib = torch.cuda.max_memory_allocated() / (1024 ** 3)
@@ -344,6 +415,62 @@ class Trainer:
             reduction="batchmean",
         )
         return 0.5 * (forward_kl + reverse_kl)
+
+    @staticmethod
+    def _queue_supervised_contrastive_loss(
+        *,
+        features: torch.Tensor,
+        labels: torch.Tensor,
+        pair_ids: List[str],
+        queue_features: deque,
+        queue_labels: deque,
+        queue_pair_ids: deque,
+        temperature: float,
+        min_queue_size: int,
+    ) -> Optional[torch.Tensor]:
+        if len(queue_features) < min_queue_size:
+            return None
+
+        query_features = torch.nn.functional.normalize(features.float(), dim=-1)
+        key_features = torch.stack(list(queue_features)).to(device=query_features.device)
+        key_labels = torch.tensor(
+            list(queue_labels),
+            dtype=torch.long,
+            device=query_features.device,
+        )
+        stored_pair_ids = list(queue_pair_ids)
+        same_label = labels.view(-1, 1).eq(key_labels.view(1, -1))
+        same_pair = torch.tensor(
+            [
+                [pair_id == stored_pair_id for stored_pair_id in stored_pair_ids]
+                for pair_id in pair_ids
+            ],
+            dtype=torch.bool,
+            device=query_features.device,
+        )
+
+        # Same-label examples from the same source pair are too easy and can leak
+        # near-duplicate text into the positive set. Exclude them entirely.
+        eligible = ~(same_label & same_pair)
+        positive = same_label & ~same_pair
+        positive_count = positive.sum(dim=1)
+        valid_rows = positive_count > 0
+        if not valid_rows.any():
+            return None
+
+        similarities = query_features @ key_features.transpose(0, 1)
+        similarities = similarities / temperature
+        similarities = similarities.masked_fill(~eligible, float("-inf"))
+        log_probabilities = similarities - torch.logsumexp(
+            similarities,
+            dim=1,
+            keepdim=True,
+        )
+        per_anchor_loss = -(
+            log_probabilities.masked_fill(~positive, 0.0).sum(dim=1)
+            / positive_count.clamp_min(1)
+        )
+        return per_anchor_loss[valid_rows].mean()
 
     def evaluation_loop(self, partition: str, print_results: bool, tag: Optional[str] = None) -> Optional[Dict[str, Union[float, np.ndarray]]]:
         self.model.eval()

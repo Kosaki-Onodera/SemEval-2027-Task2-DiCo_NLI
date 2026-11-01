@@ -781,6 +781,49 @@ f81fe16  English-only project snapshot
 
 ## 14. 下一组优先实验
 
+### E8：动态队列 Supervised Contrastive Learning，版本 A
+
+状态：代码已实现，等待 Kaggle 结果。
+
+该实验在 batch=1 条件下使用 detach 的历史表示队列，为 supervised
+contrastive learning 提供同类正样本和异类负样本。它不是严格的同 batch
+大 batch 对比学习，而是 memory-queue SupCon。
+
+配置：
+
+```text
+labels participating in SCL = all four labels
+queue size = 512
+minimum queue size = 64
+temperature = 0.07
+SCL weight = 0.05
+NEGATIVE class weight = 1.0
+R-Drop = disabled
+```
+
+训练配置自动记录到：
+
+```text
+training_config.json
+```
+
+表示来自 DeBERTa classifier 前的 pooled output，不使用四个 logits。
+
+正样本定义：
+
+```text
+same label and different pair_id
+```
+
+同一 source pair 的同类样本会从该 anchor 的正负候选中排除，避免
+near-duplicate 泄漏。
+
+计划输出目录：
+
+```text
+/kaggle/working/dico_nli_runs/deberta_v2_xxlarge_lora_track1_sclA005
+```
+
 ### E7：R-Drop 正则化
 
 状态：已运行，结果失败，已拒绝。

@@ -158,6 +158,10 @@ starter_kit/
 | `--gradient_accumulation_steps` | `int` | No | Number of micro-batches accumulated into one optimizer step. Default: `1`.                                      |
 | `--negative_class_weight` | `float` | No | Cross-entropy loss weight for `NEGATIVE_OTHER`. Default: `1.0`.                                                   |
 | `--rdrop_alpha`     | `float` | No       | Symmetric KL weight for R-Drop. `0` disables it.                                                                        |
+| `--scl_weight`      | `float` | No       | Memory-queue supervised contrastive loss weight. `0` disables SCL.                                                      |
+| `--scl_temperature` | `float` | No       | SCL temperature. Default: `0.07`.                                                                                       |
+| `--scl_queue_size`  | `int`   | No       | Maximum detached representation queue size. Default: `512`.                                                             |
+| `--scl_min_queue_size` | `int` | No      | Queue warmup length before SCL is applied. Default: `64`.                                                               |
 | `--use_lora`        | `bool`  | No       | Wrap the classification model with a PEFT LoRA adapter.                                                                  |
 | `--load_in_4bit`    | `bool`  | No       | Load the base model in 4-bit NF4 for QLoRA. Requires `--use_lora`.                                                       |
 | `--lora_r`          | `int`   | No       | LoRA rank. Default: `16`.                                                                                                 |
@@ -244,6 +248,10 @@ python3 -u main.py \
     --gradient_accumulation_steps 16 \
     --negative_class_weight 1.0 \
     --rdrop_alpha 0.0 \
+    --scl_weight 0.05 \
+    --scl_temperature 0.07 \
+    --scl_queue_size 512 \
+    --scl_min_queue_size 64 \
     --wd 1e-5 \
     --num_epochs 3 \
     --no-is_optuna_trial \

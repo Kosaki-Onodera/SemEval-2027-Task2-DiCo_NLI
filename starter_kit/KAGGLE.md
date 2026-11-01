@@ -76,6 +76,9 @@ max length = 128
 epochs = 3
 NEGATIVE_OTHER loss weight = 1.0
 R-Drop symmetric KL weight = 0.0
+SCL weight = 0.05
+SCL temperature = 0.07
+SCL queue size = 512
 LoRA r = 16
 LoRA alpha = 32
 LoRA targets = query_proj,value_proj
@@ -87,7 +90,7 @@ gradient checkpointing = enabled
 ## 输出位置
 
 ```text
-/kaggle/working/dico_nli_runs/deberta_v2_xxlarge_lora_track1
+/kaggle/working/dico_nli_runs/deberta_v2_xxlarge_lora_track1_sclA005
 ```
 
 每个 epoch 的 adapter 会保存到：
@@ -99,6 +102,12 @@ checkpoints/epoch_3/
 ```
 
 最终 adapter 会保存到输出目录根部。
+
+完整训练参数和环境版本会写入：
+
+```text
+training_config.json
+```
 
 dev 预测和官方评分位于：
 

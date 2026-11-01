@@ -85,6 +85,16 @@ class Model:
         if self.use_lora:
             self.model = self._attach_lora(params)
 
+        self._last_features: torch.Tensor | None = None
+        self._classifier_module = None
+        for name, module in self.model.named_modules():
+            if name.endswith("classifier"):
+                self._classifier_module = module
+        if self._classifier_module is None and float(params.get("scl_weight", 0.0)) > 0:
+            raise RuntimeError("SCL requires a classifier module to capture pooled features.")
+        if self._classifier_module is not None:
+            self._classifier_module.register_forward_hook(self._capture_classifier_input)
+
         self.emb_size: int = self.model.config.hidden_size
         # self.model.config.max_position_embeddings
         self.max_length: int = int(params["max_length"])
@@ -136,6 +146,15 @@ class Model:
 
         self.model.print_trainable_parameters()
         return self.model
+
+    def _capture_classifier_input(self, module, inputs, output) -> None:
+        if inputs and isinstance(inputs[0], torch.Tensor):
+            self._last_features = inputs[0]
+
+    def classifier_features(self) -> torch.Tensor:
+        if self._last_features is None:
+            raise RuntimeError("Classifier features are unavailable before a forward pass.")
+        return self._last_features
 
     @staticmethod
     def _resolve_compute_dtype(name: str) -> torch.dtype:

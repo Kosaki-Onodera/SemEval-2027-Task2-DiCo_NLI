@@ -15,6 +15,10 @@ LEARNING_RATE="${LEARNING_RATE:-2e-5}"
 WARMUP_PERCENT="${WARMUP_PERCENT:-0.05}"
 NEGATIVE_CLASS_WEIGHT="${NEGATIVE_CLASS_WEIGHT:-1.0}"
 R_DROP_ALPHA="${R_DROP_ALPHA:-0.0}"
+SCL_WEIGHT="${SCL_WEIGHT:-0.05}"
+SCL_TEMPERATURE="${SCL_TEMPERATURE:-0.07}"
+SCL_QUEUE_SIZE="${SCL_QUEUE_SIZE:-512}"
+SCL_MIN_QUEUE_SIZE="${SCL_MIN_QUEUE_SIZE:-64}"
 
 KAGGLE_DATA_ROOT="/kaggle/input/datasets/gongbaoxin/dico-nli-dataset/final_data"
 if [[ -z "${DATA_ROOT:-}" ]]; then
@@ -26,7 +30,7 @@ if [[ -z "${DATA_ROOT:-}" ]]; then
 fi
 
 if [[ -d "/kaggle/working" ]]; then
-    DEFAULT_OUTPUT_DIR="/kaggle/working/dico_nli_runs/deberta_v2_xxlarge_lora_track1"
+    DEFAULT_OUTPUT_DIR="/kaggle/working/dico_nli_runs/deberta_v2_xxlarge_lora_track1_sclA005"
 else
     DEFAULT_OUTPUT_DIR="${SCRIPT_DIR}/results/deberta_v2_xxlarge_lora_track1"
 fi
@@ -65,6 +69,10 @@ mkdir -p "${OUTPUT_DIR}"
     --gradient_accumulation_steps "${GRADIENT_ACCUMULATION_STEPS}" \
     --negative_class_weight "${NEGATIVE_CLASS_WEIGHT}" \
     --rdrop_alpha "${R_DROP_ALPHA}" \
+    --scl_weight "${SCL_WEIGHT}" \
+    --scl_temperature "${SCL_TEMPERATURE}" \
+    --scl_queue_size "${SCL_QUEUE_SIZE}" \
+    --scl_min_queue_size "${SCL_MIN_QUEUE_SIZE}" \
     --wd 1e-5 \
     --num_epochs "${EPOCHS}" \
     --no-is_optuna_trial \
