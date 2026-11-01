@@ -97,6 +97,18 @@ class Trainer:
 
         # Initialize model
         self.params["num_labels"] = len(self.labels)
+        negative_class_weight = float(self.params.get("negative_class_weight", 1.0))
+        self.params["class_weights"] = [
+            negative_class_weight if str(label) == "NEGATIVE_OTHER" else 1.0
+            for label in self.labels
+        ]
+        print(
+            "Class weights:",
+            {
+                str(label): weight
+                for label, weight in zip(self.labels, self.params["class_weights"])
+            },
+        )
         self.model = Model(params=self.params)
         self.model.to(device=self.device)
 

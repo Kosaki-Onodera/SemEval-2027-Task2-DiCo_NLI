@@ -156,6 +156,7 @@ starter_kit/
 | `--wd`              | `float` | No       | Weight decay for the optimizer (common values: 1e-6 to 1e-1).                                                            |
 | `--num_epochs`      | `int`   | No       | Number of training epochs (1–10).                                                                                        |
 | `--gradient_accumulation_steps` | `int` | No | Number of micro-batches accumulated into one optimizer step. Default: `1`.                                      |
+| `--negative_class_weight` | `float` | No | Cross-entropy loss weight for `NEGATIVE_OTHER`. Default: `1.0`.                                                   |
 | `--use_lora`        | `bool`  | No       | Wrap the classification model with a PEFT LoRA adapter.                                                                  |
 | `--load_in_4bit`    | `bool`  | No       | Load the base model in 4-bit NF4 for QLoRA. Requires `--use_lora`.                                                       |
 | `--lora_r`          | `int`   | No       | LoRA rank. Default: `16`.                                                                                                 |
@@ -240,6 +241,7 @@ python3 -u main.py \
     --lr 2e-5 \
     --batch_size 1 \
     --gradient_accumulation_steps 16 \
+    --negative_class_weight 1.5 \
     --wd 1e-5 \
     --num_epochs 3 \
     --no-is_optuna_trial \

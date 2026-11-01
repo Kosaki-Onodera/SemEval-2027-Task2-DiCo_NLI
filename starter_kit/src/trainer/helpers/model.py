@@ -2,6 +2,7 @@ from typing import Union, Dict, Any, List, Iterable
 from transformers import AutoModelForSequenceClassification, AutoTokenizer, BatchEncoding, AutoConfig
 from transformers.modeling_outputs import SequenceClassifierOutput
 import torch
+import torch.nn.functional as F
 import numpy as np
 
 
@@ -11,6 +12,12 @@ class Model:
         self.load_in_4bit: bool = bool(params.get("load_in_4bit", False))
         self.gradient_checkpointing: bool = bool(params.get("gradient_checkpointing", False))
         self.compute_dtype = self._resolve_compute_dtype(str(params.get("compute_dtype", "float16")))
+        class_weights = params.get("class_weights")
+        self.class_weights = (
+            torch.tensor([float(weight) for weight in class_weights], dtype=torch.float32)
+            if class_weights is not None
+            else None
+        )
 
         self.config = AutoConfig.from_pretrained(
             pretrained_model_name_or_path=str(params["model_path"])
@@ -150,11 +157,23 @@ class Model:
         if "token_type_ids" in batch:
             inputs["token_type_ids"] = batch["token_type_ids"].to(device=device)
 
-        # Check if labels are provided in the batch
+        labels = None
         if "labels" in batch:
-            inputs["labels"] = batch["labels"].to(device=device)
+            labels = batch["labels"].to(device=device)
+            if self.class_weights is None:
+                inputs["labels"] = labels
 
-        return self.model(**inputs)
+        outputs: SequenceClassifierOutput = self.model(**inputs)
+
+        if labels is not None and self.class_weights is not None:
+            loss = F.cross_entropy(
+                outputs.logits.view(-1, int(self.config.num_labels)),
+                labels.view(-1),
+                weight=self.class_weights.to(device=outputs.logits.device),
+            )
+            return SequenceClassifierOutput(loss=loss, logits=outputs.logits)
+
+        return outputs
 
     def tokenize(self, data: np.ndarray) -> dict[str, Any]:
         texts_first, texts_second = zip(*data)

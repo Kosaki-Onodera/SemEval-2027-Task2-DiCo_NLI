@@ -536,6 +536,8 @@ f81fe16  English-only project snapshot
 
 ### E5：NEGATIVE_OTHER 类别加权
 
+状态：代码已实现，等待 Kaggle 结果。
+
 保持 E4 其他条件不变，只改变类别权重：
 
 ```text
@@ -543,6 +545,20 @@ BACKWARD         1.0
 EQUIVALENCE      1.0
 FORWARD          1.0
 NEGATIVE_OTHER   1.5
+```
+
+实现：
+
+```text
+--negative_class_weight 1.5
+```
+
+训练损失改为带类别权重的交叉熵；其他类别权重保持 1.0。
+
+计划输出目录：
+
+```text
+/kaggle/working/dico_nli_runs/deberta_v2_xxlarge_lora_track1_nweight15
 ```
 
 评价标准：

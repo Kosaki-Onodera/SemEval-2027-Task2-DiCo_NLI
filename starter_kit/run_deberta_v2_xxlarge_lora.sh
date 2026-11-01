@@ -13,6 +13,7 @@ EPOCHS="${EPOCHS:-3}"
 COMPUTE_DTYPE="${COMPUTE_DTYPE:-float16}"
 LEARNING_RATE="${LEARNING_RATE:-2e-5}"
 WARMUP_PERCENT="${WARMUP_PERCENT:-0.05}"
+NEGATIVE_CLASS_WEIGHT="${NEGATIVE_CLASS_WEIGHT:-1.5}"
 
 KAGGLE_DATA_ROOT="/kaggle/input/datasets/gongbaoxin/dico-nli-dataset/final_data"
 if [[ -z "${DATA_ROOT:-}" ]]; then
@@ -24,7 +25,7 @@ if [[ -z "${DATA_ROOT:-}" ]]; then
 fi
 
 if [[ -d "/kaggle/working" ]]; then
-    DEFAULT_OUTPUT_DIR="/kaggle/working/dico_nli_runs/deberta_v2_xxlarge_lora_track1_amp"
+    DEFAULT_OUTPUT_DIR="/kaggle/working/dico_nli_runs/deberta_v2_xxlarge_lora_track1_nweight15"
 else
     DEFAULT_OUTPUT_DIR="${SCRIPT_DIR}/results/deberta_v2_xxlarge_lora_track1"
 fi
@@ -61,6 +62,7 @@ mkdir -p "${OUTPUT_DIR}"
     --lr "${LEARNING_RATE}" \
     --batch_size "${MICRO_BATCH_SIZE}" \
     --gradient_accumulation_steps "${GRADIENT_ACCUMULATION_STEPS}" \
+    --negative_class_weight "${NEGATIVE_CLASS_WEIGHT}" \
     --wd 1e-5 \
     --num_epochs "${EPOCHS}" \
     --no-is_optuna_trial \

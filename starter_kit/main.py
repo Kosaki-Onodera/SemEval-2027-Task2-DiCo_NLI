@@ -46,6 +46,7 @@ if __name__ == "__main__":
     parser.add_argument("--wd", type=float, help="Weight decay for the optimizer. ([1e-6, 5e-6, 8e-6, 1e-5, 5e-5, 1e-4, 5e-4, 1e-3, 5e-3, 1e-2, 5e-2, 1e-1])")
     parser.add_argument("--num_epochs", type=int, help="Number of training epochs (between 1 and 10).")
     parser.add_argument("--gradient_accumulation_steps", type=int, default=1, help="Number of micro-batches accumulated into one optimizer step.")
+    parser.add_argument("--negative_class_weight", type=float, default=1.0, help="Cross-entropy loss weight for NEGATIVE_OTHER.")
     parser.add_argument("--use_lora", action=argparse.BooleanOptionalAction, default=False, help="Wrap the classification model with a PEFT LoRA adapter.")
     parser.add_argument("--load_in_4bit", action=argparse.BooleanOptionalAction, default=False, help="Load the base model in 4-bit NF4 for QLoRA training.")
     parser.add_argument("--lora_r", type=int, default=16, help="LoRA rank.")
@@ -93,6 +94,7 @@ if __name__ == "__main__":
         assert 1 <= args.batch_size <= 64, "--batch_size must be between 1 and 64."
 
     assert args.gradient_accumulation_steps >= 1, "--gradient_accumulation_steps must be at least 1."
+    assert args.negative_class_weight > 0, "--negative_class_weight must be positive."
     assert args.lora_r > 0, "--lora_r must be positive."
     assert args.lora_alpha > 0, "--lora_alpha must be positive."
     assert 0 <= args.lora_dropout <= 1, "--lora_dropout must be between 0 and 1."
@@ -142,6 +144,7 @@ if __name__ == "__main__":
         "wd": args.wd,
         "num_epochs": args.num_epochs,
         "gradient_accumulation_steps": args.gradient_accumulation_steps,
+        "negative_class_weight": args.negative_class_weight,
         "use_lora": args.use_lora,
         "load_in_4bit": args.load_in_4bit,
         "lora_r": args.lora_r,
