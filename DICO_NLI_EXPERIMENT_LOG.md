@@ -563,8 +563,10 @@ bias_results.json
 - Weighted F1 的高点位于 `+0.75`；
 - HardCons/SoftCons 的高点位于负偏置；
 - 无校准 `bias=0` 仍是三项最均衡的运行；
-- `+0.75` 适合作为 F1-oriented secondary run；
-- `-2.0` 适合作为 consistency-oriented secondary run；
+- `+0.25` 适合作为 balanced/F1-oriented secondary run；
+- `+0.75` 适合作为 maximum-F1 secondary run；
+- `-1.0` 适合作为 consistency-oriented secondary run；
+- `-1.0` 在所有三项上支配 `-2.0`，因此不推荐 `-2.0`；
 - 不能把自动按 F1 选择的 `+0.75` 描述为总体最佳系统。
 
 FP16 推理得到的 baseline 为：
@@ -749,8 +751,9 @@ NEGATIVE_OTHER   1.5
 
 ### 后续候选
 
-- 将 `bias=0` 作为主系统，`bias=+0.75` 作为 F1-oriented variant；
-- 将 `bias=-2.0` 作为 consistency-oriented variant；
+- 将 `bias=0` 作为主系统；
+- 将 `bias=+0.25` 作为平衡变体，将 `bias=+0.75` 作为 F1 最大变体；
+- 将 `bias=-1.0` 作为 consistency-oriented variant；
 - 保留 E6 校准产物作为误差分析材料；
 - 探索单独的 reversible/negative 二阶段判定器；
 - 探索 pair-level consistency 约束；
