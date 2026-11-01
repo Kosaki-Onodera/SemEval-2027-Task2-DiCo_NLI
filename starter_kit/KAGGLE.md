@@ -75,7 +75,7 @@ effective batch = 16
 max length = 128
 epochs = 3
 NEGATIVE_OTHER loss weight = 1.0
-R-Drop symmetric KL weight = 0.5
+R-Drop symmetric KL weight = 0.0
 LoRA r = 16
 LoRA alpha = 32
 LoRA targets = query_proj,value_proj
@@ -87,7 +87,7 @@ gradient checkpointing = enabled
 ## 输出位置
 
 ```text
-/kaggle/working/dico_nli_runs/deberta_v2_xxlarge_lora_track1_rdrop05
+/kaggle/working/dico_nli_runs/deberta_v2_xxlarge_lora_track1
 ```
 
 每个 epoch 的 adapter 会保存到：

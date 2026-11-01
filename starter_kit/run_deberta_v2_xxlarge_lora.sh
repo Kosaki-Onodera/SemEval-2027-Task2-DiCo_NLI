@@ -14,7 +14,7 @@ COMPUTE_DTYPE="${COMPUTE_DTYPE:-float16}"
 LEARNING_RATE="${LEARNING_RATE:-2e-5}"
 WARMUP_PERCENT="${WARMUP_PERCENT:-0.05}"
 NEGATIVE_CLASS_WEIGHT="${NEGATIVE_CLASS_WEIGHT:-1.0}"
-R_DROP_ALPHA="${R_DROP_ALPHA:-0.5}"
+R_DROP_ALPHA="${R_DROP_ALPHA:-0.0}"
 
 KAGGLE_DATA_ROOT="/kaggle/input/datasets/gongbaoxin/dico-nli-dataset/final_data"
 if [[ -z "${DATA_ROOT:-}" ]]; then
@@ -26,7 +26,7 @@ if [[ -z "${DATA_ROOT:-}" ]]; then
 fi
 
 if [[ -d "/kaggle/working" ]]; then
-    DEFAULT_OUTPUT_DIR="/kaggle/working/dico_nli_runs/deberta_v2_xxlarge_lora_track1_rdrop05"
+    DEFAULT_OUTPUT_DIR="/kaggle/working/dico_nli_runs/deberta_v2_xxlarge_lora_track1"
 else
     DEFAULT_OUTPUT_DIR="${SCRIPT_DIR}/results/deberta_v2_xxlarge_lora_track1"
 fi

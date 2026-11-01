@@ -100,6 +100,7 @@ Rev(EQUIVALENCE)         = EQUIVALENCE
 | E4 | DeBERTa-v2-xxlarge | FP32 LoRA，pooler 可训练 | final dev | 3 | 0.6802 | 0.7437 | **0.6751** | 有效开发实验 |
 | E5 | DeBERTa-v2-xxlarge | FP32 LoRA，N 权重 1.5 | final dev | 3 | 0.4395 | 0.4404 | 0.3502 | 失败，已拒绝 |
 | E6 | E4 adapter + dev logit 校准 | 不重新训练 | final dev | bias=0 | 0.6825 | 0.7437 | 0.6751 | 主候选 |
+| E7 | DeBERTa-v2-xxlarge | FP32 LoRA + R-Drop 0.5 | final dev | 3 | 0.4404 | 0.4477 | 0.3394 | 失败，已拒绝 |
 
 ## 6. E1：ModernBERT trial smoke test
 
@@ -597,6 +598,73 @@ SHA256：
 fa364c9695c6a6add430751679c88c70249858f60b25b081e293be1606391214
 ```
 
+## 10.3 E7：R-Drop 失败实验
+
+### 配置
+
+| 项目 | 值 |
+|---|---|
+| 模型 | `microsoft/deberta-v2-xxlarge` |
+| 训练方式 | 标准 LoRA，FP32 |
+| R-Drop alpha | 0.5 |
+| NEGATIVE loss weight | 1.0 |
+| Micro batch | 1 |
+| Gradient accumulation | 16 |
+| Max length | 128 |
+| Learning rate | `2e-5` |
+| Epochs | 3 |
+
+R-Drop 对同一 batch 进行两次 dropout 前向：
+
+```text
+0.5 * (CE_1 + CE_2) + 0.5 * SymmetricKL(logits_1, logits_2)
+```
+
+### 每轮结果
+
+| Epoch | Weighted F1 | SoftCons | HardCons |
+|---:|---:|---:|---:|
+| 1 | 0.3833 | 0.3394 | 0.2671 |
+| 2 | 0.4367 | 0.4332 | 0.3430 |
+| 3 | **0.4404** | **0.4477** | **0.3394** |
+
+### Epoch 3 标签指标
+
+| Label | Precision | Recall | F1 |
+|---|---:|---:|---:|
+| BACKWARD_ENTAILMENT | 0.4448 | 0.6789 | 0.5375 |
+| EQUIVALENCE | 0.5647 | 0.5517 | 0.5581 |
+| FORWARD_ENTAILMENT | 0.4439 | 0.4579 | 0.4508 |
+| NEGATIVE_OTHER | 0.7500 | 0.0283 | 0.0545 |
+
+### 结论
+
+- R-Drop 当前结果远低于 E4；
+- NEGATIVE 只正确识别 3/106 个样本；
+- 该 adapter 不应使用；
+- 压缩包不含每 epoch train loss，因此不能仅凭产物判断
+  R-Drop 正则化本身失败，还是训练过程另有异常；
+- 在拿到完整训练日志前，不能把低分全部归因于 R-Drop 方法；
+- 脚本默认 R-Drop 已恢复为 0。
+
+### 产物
+
+```text
+D:\下载\dico_nli_deberta_xxlarge_lora_rdrop05_fp32.zip
+```
+
+大小：
+
+```text
+112,026,670 bytes
+```
+
+SHA256：
+
+```text
+35f35cb8c912fdd0704f4e86d24c870d167f9289c21bc20d8397d21c36a47995
+```
+
 ## 11. 产物
 
 ### 11.1 当前最佳 DeBERTa adapter
@@ -715,7 +783,7 @@ f81fe16  English-only project snapshot
 
 ### E7：R-Drop 正则化
 
-状态：代码已实现，等待 Kaggle 结果。
+状态：已运行，结果失败，已拒绝。
 
 配置保持 E4 不变，只加入 R-Drop：
 
@@ -738,6 +806,8 @@ R-Drop 约束的是两个随机 dropout 子模型的一致性，不直接约束
 ```text
 /kaggle/working/dico_nli_runs/deberta_v2_xxlarge_lora_track1_rdrop05
 ```
+
+实际结果：见 10.3。默认 R-Drop alpha 已恢复为 0。
 
 ### E5：NEGATIVE_OTHER 类别加权
 
@@ -809,4 +879,6 @@ NEGATIVE_OTHER   1.5
 - 不能继续使用 NEGATIVE weight 1.5 的 E5 adapter。
 - 不能把 E6 的 `bias=+0.75` 描述为三项指标总体最优；
 - 不能把 dev 上选择的偏置描述为在隐藏 test 上已验证有效。
+- 不能把 E7 的低分直接归因于 R-Drop，因为缺少训练 loss 日志；
+- 不能使用 E7 的 R-Drop adapter 替代 E4。
 
