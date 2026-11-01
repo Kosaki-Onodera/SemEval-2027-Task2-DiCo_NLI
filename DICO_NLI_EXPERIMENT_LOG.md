@@ -99,6 +99,7 @@ Rev(EQUIVALENCE)         = EQUIVALENCE
 | E3b | DeBERTa-v2-xxlarge | FP32 LoRA，pooler 冻结 | final dev | 3 | 0.3402 | 0.2996 | 0.1661 | 失败/诊断 |
 | E4 | DeBERTa-v2-xxlarge | FP32 LoRA，pooler 可训练 | final dev | 3 | 0.6802 | 0.7437 | **0.6751** | 有效开发实验 |
 | E5 | DeBERTa-v2-xxlarge | FP32 LoRA，N 权重 1.5 | final dev | 3 | 0.4395 | 0.4404 | 0.3502 | 失败，已拒绝 |
+| E6 | E4 adapter + dev logit 校准 | 不重新训练 | final dev | bias=0 | 0.6825 | 0.7437 | 0.6751 | 主候选 |
 
 ## 6. E1：ModernBERT trial smoke test
 
@@ -517,6 +518,83 @@ SHA256：
 
 Adapter 配置与原模型一致，`classifier` 和 `pooler` 仍正确保存在 `modules_to_save` 中。
 
+## 10.2 E6：E4 dev logit 校准
+
+### 实验目的
+
+不重新训练 E4，只加载其 epoch 3 adapter，对 dev logits 的
+`NEGATIVE_OTHER` 分量增加偏置，研究是否能改善 N 类别，同时观察三项指标的权衡。
+
+### 方法
+
+- 基座：`microsoft/deberta-v2-xxlarge`
+- adapter：E4 `checkpoints/epoch_3`
+- 推理精度：FP16
+- 输入：`text1 [SEP] text2`
+- 最大长度：128
+- 扫描偏置：`-2.0` 至 `4.0`
+- 不使用 dev 标签训练模型，只用 dev 选择后处理偏置
+
+校准流程保存了：
+
+```text
+dev_logits.npy
+每种偏置的 prediction CSV
+bias_results.csv
+bias_results.json
+```
+
+### 关键候选
+
+| NEGATIVE bias | Weighted F1 | SoftCons | HardCons | N recall | N F1 | 解释 |
+|---:|---:|---:|---:|---:|---:|---|
+| -2.00 | 0.6194 | **0.7581** | **0.6895** | 0.0283 | 0.0545 | 偏向方向关系 |
+| -1.00 | 0.6478 | 0.7581 | 0.6895 | 0.1132 | 0.1983 | 方向一致性较好 |
+| -0.50 | 0.6647 | 0.7509 | 0.6823 | 0.1887 | 0.2941 | 小幅偏向方向关系 |
+| 0.00 | 0.6825 | 0.7437 | 0.6751 | 0.2830 | 0.3871 | 最均衡 |
+| +0.25 | 0.6893 | 0.7292 | 0.6679 | 0.3396 | 0.4211 | 轻微偏重 F1 |
+| +0.75 | **0.6953** | 0.6823 | 0.6245 | 0.4717 | 0.4673 | F1 最大 |
+| +1.00 | 0.6935 | 0.6426 | 0.5884 | 0.5472 | 0.4677 | 继续偏重 N |
+| +2.00 | 0.6293 | 0.4765 | 0.4440 | 0.7453 | 0.4147 | 过度预测 N |
+
+### 结论
+
+- 不存在同时提高三项指标的偏置；
+- Weighted F1 的高点位于 `+0.75`；
+- HardCons/SoftCons 的高点位于负偏置；
+- 无校准 `bias=0` 仍是三项最均衡的运行；
+- `+0.75` 适合作为 F1-oriented secondary run；
+- `-2.0` 适合作为 consistency-oriented secondary run；
+- 不能把自动按 F1 选择的 `+0.75` 描述为总体最佳系统。
+
+FP16 推理得到的 baseline 为：
+
+```text
+Weighted F1 = 0.6825
+SoftCons    = 0.7437
+HardCons    = 0.6751
+```
+
+与 E4 原始 FP32 结果 `0.6802 / 0.7437 / 0.6751` 基本一致，F1 的少量差异来自推理精度不同。
+
+### 产物
+
+```text
+D:\下载\dico_nli_e4_bias_calibration.zip
+```
+
+大小：
+
+```text
+54,347 bytes
+```
+
+SHA256：
+
+```text
+fa364c9695c6a6add430751679c88c70249858f60b25b081e293be1606391214
+```
+
 ## 11. 产物
 
 ### 11.1 当前最佳 DeBERTa adapter
@@ -628,7 +706,8 @@ f81fe16  English-only project snapshot
 - 完整 Kaggle 环境包版本；
 - official test prediction；
 - 多随机种子实验；
-- E4 logits 校准实验。
+- official test prediction；
+- N 类别的结构性改进方法。
 
 ## 14. 下一组优先实验
 
@@ -670,9 +749,11 @@ NEGATIVE_OTHER   1.5
 
 ### 后续候选
 
-- 直接加载 E4 checkpoint，对 dev logits 做 NEGATIVE 类别偏置校准；
-- 比较偏置前后 Weighted F1、SoftCons、HardCons；
-- 不修改 E4 基座或 adapter；
+- 将 `bias=0` 作为主系统，`bias=+0.75` 作为 F1-oriented variant；
+- 将 `bias=-2.0` 作为 consistency-oriented variant；
+- 保留 E6 校准产物作为误差分析材料；
+- 探索单独的 reversible/negative 二阶段判定器；
+- 探索 pair-level consistency 约束；
 - 增加 LoRA target modules；
 - 使用更多随机种子；
 - 保存完整训练日志和显存统计。
@@ -697,4 +778,6 @@ NEGATIVE_OTHER   1.5
 - 不能把缺失的 pooler/classifier 初始化为模型加载错误。
 - 不能把 E5 的 NEGATIVE F1=0 归因于类别权重不足；
 - 不能继续使用 NEGATIVE weight 1.5 的 E5 adapter。
+- 不能把 E6 的 `bias=+0.75` 描述为三项指标总体最优；
+- 不能把 dev 上选择的偏置描述为在隐藏 test 上已验证有效。
 
