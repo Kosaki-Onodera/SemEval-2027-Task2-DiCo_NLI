@@ -10,6 +10,7 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 import torch
+import torch.nn.functional as F
 from torch.utils.data import DataLoader, SequentialSampler, RandomSampler
 import transformers
 from transformers.modeling_outputs import SequenceClassifierOutput
@@ -213,6 +214,7 @@ class Trainer:
         num_epochs = int(self.params["num_epochs"])
         warmup_pct = float(self.params["warmup_pcrt"])
         gradient_accumulation_steps = int(self.params["gradient_accumulation_steps"])
+        rdrop_alpha = float(self.params.get("rdrop_alpha", 0.0))
         trainable_parameters = [
             parameter
             for parameter in self.model.parameters()
@@ -243,6 +245,7 @@ class Trainer:
         print("\nStarting training loop:")
         print(f"Micro-batch size: {self.params['batch_size']}")
         print(f"Gradient accumulation steps: {gradient_accumulation_steps}")
+        print(f"R-Drop alpha: {rdrop_alpha}")
         print(
             "Effective batch size: "
             f"{int(self.params['batch_size']) * gradient_accumulation_steps}"
@@ -262,7 +265,20 @@ class Trainer:
                     enabled=self.amp_enabled,
                 ):
                     outputs: SequenceClassifierOutput = self.model.forward(batch=batch, device=self.device)
-                loss: torch.Tensor = outputs.loss
+                    if rdrop_alpha > 0:
+                        second_outputs: SequenceClassifierOutput = self.model.forward(
+                            batch=batch,
+                            device=self.device,
+                        )
+                        ce_loss = 0.5 * (outputs.loss + second_outputs.loss)
+                        kl_loss = self._symmetric_kl(
+                            outputs.logits,
+                            second_outputs.logits,
+                        )
+                        loss = ce_loss + rdrop_alpha * kl_loss
+                    else:
+                        loss = outputs.loss
+
                 epoch_loss += loss.item()
                 scaled_loss = self.scaler.scale(loss) / gradient_accumulation_steps
                 scaled_loss.backward()
@@ -310,6 +326,24 @@ class Trainer:
         if torch.cuda.is_available():
             peak_gib = torch.cuda.max_memory_allocated() / (1024 ** 3)
             print(f"Peak CUDA memory allocated during training: {peak_gib:.2f} GiB")
+
+    @staticmethod
+    def _symmetric_kl(first_logits: torch.Tensor, second_logits: torch.Tensor) -> torch.Tensor:
+        first_log_probs = F.log_softmax(first_logits.float(), dim=-1)
+        second_log_probs = F.log_softmax(second_logits.float(), dim=-1)
+        first_probs = first_log_probs.exp()
+        second_probs = second_log_probs.exp()
+        forward_kl = F.kl_div(
+            first_log_probs,
+            second_probs,
+            reduction="batchmean",
+        )
+        reverse_kl = F.kl_div(
+            second_log_probs,
+            first_probs,
+            reduction="batchmean",
+        )
+        return 0.5 * (forward_kl + reverse_kl)
 
     def evaluation_loop(self, partition: str, print_results: bool, tag: Optional[str] = None) -> Optional[Dict[str, Union[float, np.ndarray]]]:
         self.model.eval()

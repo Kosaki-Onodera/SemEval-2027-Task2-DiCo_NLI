@@ -713,6 +713,32 @@ f81fe16  English-only project snapshot
 
 ## 14. 下一组优先实验
 
+### E7：R-Drop 正则化
+
+状态：代码已实现，等待 Kaggle 结果。
+
+配置保持 E4 不变，只加入 R-Drop：
+
+```text
+rdrop_alpha = 0.5
+NEGATIVE_OTHER weight = 1.0
+```
+
+训练时对同一 batch 进行两次 dropout 前向传播，并最小化：
+
+```text
+0.5 * (CE_1 + CE_2) + alpha * SymmetricKL(logits_1, logits_2)
+```
+
+R-Drop 约束的是两个随机 dropout 子模型的一致性，不直接约束
+`text1/text2` 正反向标签，因此 E7 不能替代 DiCo-NLI 的 reversal consistency。
+
+计划输出目录：
+
+```text
+/kaggle/working/dico_nli_runs/deberta_v2_xxlarge_lora_track1_rdrop05
+```
+
 ### E5：NEGATIVE_OTHER 类别加权
 
 状态：已运行，结果失败，已拒绝。
