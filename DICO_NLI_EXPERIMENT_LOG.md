@@ -781,6 +781,55 @@ f81fe16  English-only project snapshot
 
 ## 14. 下一组优先实验
 
+### E9：第二阶段 reversal consistency
+
+状态：代码已实现，等待完整两阶段 Kaggle 结果。
+
+第一阶段配置见 E8。第二阶段从 E8 的最佳 adapter 继续训练：
+
+```text
+SCL = disabled
+R-Drop = disabled
+NEGATIVE class weight = 1.0
+pair consistency weight = 0.1
+learning rate = 1e-5
+epochs = 1
+max length = 128
+```
+
+构造方式：
+
+- 使用训练 reference 中的 `reverse_pair_id`；
+- 一个训练 item 包含同一 source pair 的两条有序实例；
+- 两个方向一起前向；
+- CE 作用于两个方向；
+- 一致性损失只作用于 BACKWARD/EQUIVALENCE/FORWARD；
+- NEGATIVE_OTHER 以单项形式参与 CE，不参与一致性项。
+
+一致性项使用有界的 Jensen-Shannon divergence：
+
+```text
+m = 0.5 * (p(A, B) + Rev(p(B, A)))
+JS = 0.5 * KL(p(A, B) || m) + 0.5 * KL(Rev(p(B, A)) || m)
+```
+
+采用 JSD 而不是无界对称 KL，是为了避免极端 logits 下概率下溢导致数值不稳定。
+
+计划输出目录：
+
+```text
+/kaggle/working/dico_nli_runs/deberta_v2_xxlarge_pair_consistency
+```
+
+本地 ModernBERT smoke test 已完成：
+
+```text
+训练 groups = 461
+reversal pairs = 336
+singles = 125
+pair consistency 反向传播 = 成功
+```
+
 ### E8：动态队列 Supervised Contrastive Learning，版本 A
 
 状态：代码已实现，等待 Kaggle 结果。

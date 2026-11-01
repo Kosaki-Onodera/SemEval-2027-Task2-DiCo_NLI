@@ -137,3 +137,26 @@ PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
 ```
 
 这会切换到 QLoRA，但默认路径是标准 LoRA。
+
+## 第二阶段：Reversal Consistency
+
+第一阶段完成后，将最佳 adapter 设置为 `STAGE1_ADAPTER`：
+
+```bash
+STAGE1_ADAPTER=/kaggle/working/dico_nli_runs/deberta_v2_xxlarge_lora_track1_sclA005_balanced_fp32/checkpoints/epoch_3 \
+DATA_ROOT=/kaggle/input/datasets/gongbaoxin/dico-nli-dataset/final_data \
+bash starter_kit/run_deberta_v2_xxlarge_pair_consistency.sh
+```
+
+第二阶段默认参数：
+
+```text
+pair consistency weight = 0.1
+SCL = disabled
+R-Drop = disabled
+learning rate = 1e-5
+epochs = 1
+```
+
+第二阶段会把同一 `reverse_pair_id` 的两条序列组成一个训练 unit。一致性项采用
+有界 Jensen-Shannon divergence，只作用于三个可逆标签。

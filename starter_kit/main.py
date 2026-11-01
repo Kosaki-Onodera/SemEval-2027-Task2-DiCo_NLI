@@ -32,6 +32,7 @@ if __name__ == "__main__":
     
     parser.add_argument("--do_train", action=argparse.BooleanOptionalAction, help="Whether to perform training.", required=True)
     parser.add_argument("--train_path", type=str, help="Path to the training dataset.")
+    parser.add_argument("--train_reference_path", type=str, help="Reference CSV with reverse_pair_id, required for paired consistency training.")
     parser.add_argument("--do_dev", action=argparse.BooleanOptionalAction, help="Whether to evaluate on a development dataset.", required=True)
     parser.add_argument("--dev_path", type=str, help="Path to the development dataset.")
     parser.add_argument("--do_test", action=argparse.BooleanOptionalAction, help="Whether to perform testing.", required=True)
@@ -54,6 +55,7 @@ if __name__ == "__main__":
     parser.add_argument("--scl_min_queue_size", type=int, default=64, help="Minimum queue size before SCL is applied.")
     parser.add_argument("--scl_per_class_queue_size", type=int, default=128, help="Maximum SCL queue size for each label.")
     parser.add_argument("--scl_initial_per_class", type=int, default=32, help="Number of current-model representations used to prefill each class queue at epoch start.")
+    parser.add_argument("--pair_consistency_weight", type=float, default=0.0, help="Reversal-consistency KL weight for paired second-stage training.")
     parser.add_argument("--use_lora", action=argparse.BooleanOptionalAction, default=False, help="Wrap the classification model with a PEFT LoRA adapter.")
     parser.add_argument("--load_in_4bit", action=argparse.BooleanOptionalAction, default=False, help="Load the base model in 4-bit NF4 for QLoRA training.")
     parser.add_argument("--lora_r", type=int, default=16, help="LoRA rank.")
@@ -109,7 +111,13 @@ if __name__ == "__main__":
     assert 2 <= args.scl_min_queue_size <= args.scl_queue_size, "--scl_min_queue_size must be between 2 and --scl_queue_size."
     assert args.scl_per_class_queue_size >= 2, "--scl_per_class_queue_size must be at least 2."
     assert 1 <= args.scl_initial_per_class <= args.scl_per_class_queue_size, "--scl_initial_per_class must be between 1 and --scl_per_class_queue_size."
+    assert args.pair_consistency_weight >= 0, "--pair_consistency_weight must be non-negative."
     assert not (args.rdrop_alpha > 0 and args.scl_weight > 0), "Do not enable R-Drop and SCL in the same controlled experiment."
+    assert not (args.rdrop_alpha > 0 and args.pair_consistency_weight > 0), "Do not enable R-Drop and pair consistency together."
+    assert not (args.scl_weight > 0 and args.pair_consistency_weight > 0), "Run SCL and pair consistency in separate stages."
+    assert args.pair_consistency_weight == 0 or args.do_train, "--pair_consistency_weight requires --do_train."
+    assert args.pair_consistency_weight == 0 or args.train_reference_path is not None, "--train_reference_path is required for pair consistency training."
+    assert args.pair_consistency_weight == 0 or os.path.isfile(args.train_reference_path), "--train_reference_path must be a valid file."
     assert args.lora_r > 0, "--lora_r must be positive."
     assert args.lora_alpha > 0, "--lora_alpha must be positive."
     assert 0 <= args.lora_dropout <= 1, "--lora_dropout must be between 0 and 1."
@@ -147,6 +155,7 @@ if __name__ == "__main__":
         "tokenizer_path": args.tokenizer_path,
         "do_train": args.do_train,
         "train_path": args.train_path,
+        "train_reference_path": args.train_reference_path,
         "do_dev": args.do_dev,
         "dev_path": args.dev_path,
         "do_test": args.do_test,
@@ -167,6 +176,7 @@ if __name__ == "__main__":
         "scl_min_queue_size": args.scl_min_queue_size,
         "scl_per_class_queue_size": args.scl_per_class_queue_size,
         "scl_initial_per_class": args.scl_initial_per_class,
+        "pair_consistency_weight": args.pair_consistency_weight,
         "use_lora": args.use_lora,
         "load_in_4bit": args.load_in_4bit,
         "lora_r": args.lora_r,

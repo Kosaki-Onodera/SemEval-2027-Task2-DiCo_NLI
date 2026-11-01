@@ -5,6 +5,7 @@ import math
 import json
 import os
 import random
+import re
 import csv
 import sys
 from collections import deque
@@ -18,7 +19,7 @@ import transformers
 from transformers.modeling_outputs import SequenceClassifierOutput
 from src.trainer.helpers.data_reader import read_transform_dico, label_encoder
 from src.trainer.helpers.model import Model
-from src.trainer.helpers.dataset_generator import NLIDataset
+from src.trainer.helpers.dataset_generator import NLIDataset, ReversalPairDataset
 from src.trainer.helpers.evaluation import evaluate
 
 class Trainer:
@@ -117,8 +118,11 @@ class Trainer:
 
         # Generate Datasets and Dataloaders
         if params["do_train"]:
-            self.train_dataset = self.model.tokenize(data=self.X_train)
-            self.train_dataset = NLIDataset(X=self.train_dataset, labels=self.y_train, ids=self.ids_train, device=self.device)
+            if float(params.get("pair_consistency_weight", 0.0)) > 0:
+                self.train_dataset = self._build_reversal_pair_dataset()
+            else:
+                self.train_dataset = self.model.tokenize(data=self.X_train)
+                self.train_dataset = NLIDataset(X=self.train_dataset, labels=self.y_train, ids=self.ids_train, device=self.device)
             self.train_dataloader = DataLoader(dataset=self.train_dataset, batch_size=int(params["batch_size"]), collate_fn=self.train_dataset.collate_fn, sampler=RandomSampler(self.train_dataset, generator=self.g), num_workers=0)
             if params["do_dev"]:
                 self.dev_dataset = self.model.tokenize(data=self.X_dev)
@@ -130,7 +134,7 @@ class Trainer:
             self.test_dataloader = DataLoader(dataset=self.test_dataset, batch_size=int(params["batch_size"]), collate_fn=self.test_dataset.collate_fn, sampler=SequentialSampler(self.test_dataset), num_workers=0)
 
         # Either training, development, or test data (or some combination) may be provided
-        self.train_dataset: Optional[NLIDataset]
+        self.train_dataset: Optional[Union[NLIDataset, ReversalPairDataset]]
         self.train_dataloader: Optional[DataLoader]
         self.dev_dataset: Optional[NLIDataset]
         self.dev_dataloader: Optional[DataLoader]
@@ -209,6 +213,103 @@ class Trainer:
         print()
 
         return ids, X, y
+
+    def _build_reversal_pair_dataset(self) -> ReversalPairDataset:
+        reference_path = self.params.get("train_reference_path")
+        if reference_path is None:
+            raise ValueError("--train_reference_path is required for pair consistency training.")
+
+        reference = pd.read_csv(str(reference_path))
+        required_columns = {
+            "instance_id",
+            "pair_id",
+            "text1",
+            "text2",
+            "reverse_pair_id",
+            "label",
+        }
+        missing = required_columns - set(reference.columns)
+        if missing:
+            raise ValueError(
+                "Training reference is missing columns: "
+                + ", ".join(sorted(missing))
+            )
+
+        records = reference.to_dict(orient="records")
+        by_id = {
+            str(record["instance_id"]): record
+            for record in records
+        }
+        seen_ids: set[str] = set()
+        ordered_records = []
+        groups = []
+
+        for record in records:
+            instance_id = str(record["instance_id"])
+            if instance_id in seen_ids:
+                continue
+
+            reverse_pair_id = record.get("reverse_pair_id")
+            if reverse_pair_id is None or pd.isna(reverse_pair_id) or not str(reverse_pair_id).strip():
+                seen_ids.add(instance_id)
+                row_index = len(ordered_records)
+                ordered_records.append(record)
+                groups.append(
+                    {
+                        "row_indices": [row_index],
+                        "is_reversal_pair": False,
+                    }
+                )
+                continue
+
+            reverse_id = str(reverse_pair_id)
+            if reverse_id not in by_id:
+                raise ValueError(
+                    f"reverse_pair_id {reverse_id!r} from {instance_id!r} was not found."
+                )
+            reverse_record = by_id[reverse_id]
+            first_index = len(ordered_records)
+            ordered_records.extend([record, reverse_record])
+            groups.append(
+                {
+                    "row_indices": [first_index, first_index + 1],
+                    "is_reversal_pair": True,
+                }
+            )
+            seen_ids.update({instance_id, reverse_id})
+
+        texts = np.asarray(
+            [
+                [
+                    re.sub(r"\s+", " ", str(record["text1"])).strip(),
+                    re.sub(r"\s+", " ", str(record["text2"])).strip(),
+                ]
+                for record in ordered_records
+            ],
+            dtype=object,
+        )
+        ids = np.asarray(
+            [str(record["instance_id"]) for record in ordered_records],
+            dtype=object,
+        )
+        labels = label_encoder.transform(
+            [str(record["label"]) for record in ordered_records]
+        )
+        tokenized = self.model.tokenize(data=texts)
+
+        reversal_pairs = sum(int(group["is_reversal_pair"]) for group in groups)
+        singles = len(groups) - reversal_pairs
+        print(
+            f"Paired dataset loaded. Groups: {len(groups)}, "
+            f"reversal pairs: {reversal_pairs}, singles: {singles}"
+        )
+        return ReversalPairDataset(
+            X=tokenized,
+            ids=ids,
+            labels=labels,
+            groups=groups,
+            device=self.device,
+        )
     
     def train_loop(self) -> None:
         lr = float(self.params["lr"])
@@ -223,6 +324,9 @@ class Trainer:
         scl_queue_size = int(self.params.get("scl_queue_size", 512))
         scl_per_class_queue_size = int(self.params.get("scl_per_class_queue_size", 128))
         scl_initial_per_class = int(self.params.get("scl_initial_per_class", 32))
+        pair_consistency_weight = float(
+            self.params.get("pair_consistency_weight", 0.0)
+        )
         scl_queues: List[deque] = [
             deque(maxlen=scl_per_class_queue_size)
             for _ in self.labels
@@ -266,6 +370,7 @@ class Trainer:
             f"prefill {scl_initial_per_class} per class"
         )
         print(f"Configured total SCL queue size: {scl_queue_size}")
+        print(f"Pair consistency weight: {pair_consistency_weight}")
         print(
             "Effective batch size: "
             f"{int(self.params['batch_size']) * gradient_accumulation_steps}"
@@ -284,6 +389,8 @@ class Trainer:
             epoch_loss = 0.0
             epoch_scl_loss = 0.0
             scl_steps = 0
+            epoch_consistency_loss = 0.0
+            consistency_steps = 0
             optimizer.zero_grad(set_to_none=True)
 
             for batch_index, batch in enumerate(tqdm(self.train_dataloader), start=1):
@@ -346,6 +453,16 @@ class Trainer:
                                 (feature, label_index, pair_id)
                             )
 
+                    if pair_consistency_weight > 0:
+                        consistency_loss = self._reversal_consistency_loss(
+                            logits=outputs.logits,
+                            pair_groups=batch["pair_groups"],
+                        )
+                        if consistency_loss is not None:
+                            loss = loss + pair_consistency_weight * consistency_loss
+                            epoch_consistency_loss += consistency_loss.item()
+                            consistency_steps += 1
+
                 epoch_loss += loss.item()
                 scaled_loss = self.scaler.scale(loss) / gradient_accumulation_steps
                 scaled_loss.backward()
@@ -367,6 +484,11 @@ class Trainer:
             print(f"Epoch {epoch + 1} average loss: {avg_loss:.4f}")
             if scl_weight > 0 and scl_steps > 0:
                 print(f"Epoch {epoch + 1} average SCL loss: {epoch_scl_loss / scl_steps:.4f}")
+            if pair_consistency_weight > 0 and consistency_steps > 0:
+                print(
+                    f"Epoch {epoch + 1} average reversal consistency loss: "
+                    f"{epoch_consistency_loss / consistency_steps:.4f}"
+                )
 
             if self.params["do_dev"]:
                 results:Dict[str, Union[float, np.ndarray]] = self.evaluation_loop(partition="dev", print_results=True, tag=f"epoch{epoch + 1}")
@@ -433,6 +555,66 @@ class Trainer:
             reduction="batchmean",
         )
         return 0.5 * (forward_kl + reverse_kl)
+
+    def _reversal_consistency_loss(
+        self,
+        *,
+        logits: torch.Tensor,
+        pair_groups: List[Dict[str, Union[int, bool]]],
+    ) -> Optional[torch.Tensor]:
+        reversible_labels = [
+            "BACKWARD_ENTAILMENT",
+            "EQUIVALENCE",
+            "FORWARD_ENTAILMENT",
+        ]
+        class_names = [str(label) for label in self.labels]
+        reversible_indices = [
+            class_names.index(label)
+            for label in reversible_labels
+        ]
+        reverse_class_order = [
+            reversible_labels.index(
+                {
+                    "BACKWARD_ENTAILMENT": "FORWARD_ENTAILMENT",
+                    "EQUIVALENCE": "EQUIVALENCE",
+                    "FORWARD_ENTAILMENT": "BACKWARD_ENTAILMENT",
+                }[label]
+            )
+            for label in reversible_labels
+        ]
+
+        pair_losses = []
+        for group in pair_groups:
+            if not bool(group["is_reversal_pair"]):
+                continue
+            start = int(group["start"])
+            end = int(group["end"])
+            if end - start != 2:
+                raise ValueError("A reversal pair group must contain exactly two rows.")
+
+            reversible_logits = logits[start:end][:, reversible_indices].float()
+            first_probs = torch.softmax(reversible_logits[0], dim=-1)
+            second_probs = torch.softmax(reversible_logits[1], dim=-1)
+            reversed_second_probs = second_probs[reverse_class_order]
+            midpoint = 0.5 * (first_probs + reversed_second_probs)
+            midpoint_log = midpoint.clamp_min(1e-8).log()
+            first_to_midpoint = F.kl_div(
+                midpoint_log,
+                first_probs,
+                reduction="sum",
+            )
+            second_to_midpoint = F.kl_div(
+                midpoint_log,
+                reversed_second_probs,
+                reduction="sum",
+            )
+            pair_losses.append(
+                0.5 * (first_to_midpoint + second_to_midpoint)
+            )
+
+        if not pair_losses:
+            return None
+        return torch.stack(pair_losses).mean()
 
     def _refresh_scl_queues(
         self,

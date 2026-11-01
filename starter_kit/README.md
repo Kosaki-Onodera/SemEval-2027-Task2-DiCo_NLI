@@ -143,6 +143,7 @@ starter_kit/
 | `--tokenizer_path`  | `str`   | Yes      | Path to a directory containing tokenizer vocabulary files saved via `save_pretrained()`, or a Hugging Face tokenizer ID. |
 | `--do_train`        | `bool`  | Yes      | Whether to perform training.                                                                                             |
 | `--train_path`      | `str`   | No       | Path to the training dataset.                                                                                            |
+| `--train_reference_path` | `str` | No      | Training reference with `reverse_pair_id`, required for second-stage pair consistency.                                  |
 | `--do_dev`          | `bool`  | Yes      | Whether to evaluate on a development dataset.                                                                            |
 | `--dev_path`        | `str`   | No       | Path to the organizer-provided development dataset.                                                                       |
 | `--do_test`         | `bool`  | Yes      | Whether to perform testing.                                                                                              |
@@ -164,6 +165,7 @@ starter_kit/
 | `--scl_min_queue_size` | `int` | No      | Queue warmup length before SCL is applied. Default: `64`.                                                               |
 | `--scl_per_class_queue_size` | `int` | No | Maximum queue size for each label. Default: `128`.                                                                    |
 | `--scl_initial_per_class` | `int` | No    | Current-model samples used to prefill each class at epoch start. Default: `32`.                                        |
+| `--pair_consistency_weight` | `float` | No | Jensen-Shannon reversal-consistency weight for paired second-stage training.                                         |
 | `--use_lora`        | `bool`  | No       | Wrap the classification model with a PEFT LoRA adapter.                                                                  |
 | `--load_in_4bit`    | `bool`  | No       | Load the base model in 4-bit NF4 for QLoRA. Requires `--use_lora`.                                                       |
 | `--lora_r`          | `int`   | No       | LoRA rank. Default: `16`.                                                                                                 |

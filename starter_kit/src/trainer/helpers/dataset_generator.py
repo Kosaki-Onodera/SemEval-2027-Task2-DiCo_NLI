@@ -55,3 +55,81 @@ class NLIDataset(Dataset):
             collated["token_type_ids"] = torch.stack(tensors=[item["token_type_ids"] for item in batch]).to(device=self.device)
 
         return collated
+
+
+class ReversalPairDataset(Dataset):
+    """Dataset whose items contain one reversal pair or one negative instance."""
+
+    def __init__(
+        self,
+        X: Dict[str, torch.Tensor],
+        ids: np.ndarray,
+        labels: np.ndarray,
+        groups: List[Dict[str, Any]],
+        device: torch.device,
+    ) -> None:
+        super().__init__()
+        self.X = X
+        self.ids = ids
+        self.labels = labels
+        self.groups = groups
+        self.device = device
+
+    def __len__(self) -> int:
+        return len(self.groups)
+
+    def __getitem__(self, idx: int) -> Dict[str, Any]:
+        group = self.groups[idx]
+        row_indices = group["row_indices"]
+        item: Dict[str, Any] = {
+            "ids": [str(self.ids[row_index]) for row_index in row_indices],
+            "input_ids": self.X["input_ids"][row_indices].clone(),
+            "attention_mask": self.X["attention_mask"][row_indices].clone(),
+            "labels": torch.from_numpy(
+                self.labels[row_indices].reshape(-1, 1)
+            ).long(),
+            "is_reversal_pair": bool(group["is_reversal_pair"]),
+        }
+        if "token_type_ids" in self.X:
+            item["token_type_ids"] = self.X["token_type_ids"][row_indices].clone()
+        return item
+
+    def collate_fn(self, batch: List[Dict[str, Any]]) -> Dict[str, Any]:
+        input_ids = []
+        attention_mask = []
+        labels = []
+        token_type_ids = []
+        ids: List[str] = []
+        groups: List[Dict[str, Any]] = []
+        offset = 0
+
+        for item in batch:
+            count = int(item["input_ids"].shape[0])
+            groups.append(
+                {
+                    "start": offset,
+                    "end": offset + count,
+                    "is_reversal_pair": item["is_reversal_pair"],
+                }
+            )
+            input_ids.append(item["input_ids"])
+            attention_mask.append(item["attention_mask"])
+            labels.append(item["labels"])
+            ids.extend(item["ids"])
+            if "token_type_ids" in item:
+                token_type_ids.append(item["token_type_ids"])
+            offset += count
+
+        collated: Dict[str, Any] = {
+            "ids": ids,
+            "input_ids": torch.cat(input_ids, dim=0).to(device=self.device),
+            "attention_mask": torch.cat(attention_mask, dim=0).to(device=self.device),
+            "labels": torch.cat(labels, dim=0).to(device=self.device),
+            "pair_groups": groups,
+        }
+        if token_type_ids:
+            collated["token_type_ids"] = torch.cat(
+                token_type_ids,
+                dim=0,
+            ).to(device=self.device)
+        return collated
