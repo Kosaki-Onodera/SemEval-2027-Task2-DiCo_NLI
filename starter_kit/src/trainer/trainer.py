@@ -13,7 +13,7 @@ import numpy as np
 import pandas as pd
 import torch
 import torch.nn.functional as F
-from torch.utils.data import DataLoader, SequentialSampler, RandomSampler
+from torch.utils.data import DataLoader, SequentialSampler, RandomSampler, Subset
 import transformers
 from transformers.modeling_outputs import SequenceClassifierOutput
 from src.trainer.helpers.data_reader import read_transform_dico, label_encoder
@@ -221,9 +221,12 @@ class Trainer:
         scl_temperature = float(self.params.get("scl_temperature", 0.07))
         scl_min_queue_size = int(self.params.get("scl_min_queue_size", 64))
         scl_queue_size = int(self.params.get("scl_queue_size", 512))
-        scl_queue_features = deque(maxlen=scl_queue_size)
-        scl_queue_labels = deque(maxlen=scl_queue_size)
-        scl_queue_pair_ids = deque(maxlen=scl_queue_size)
+        scl_per_class_queue_size = int(self.params.get("scl_per_class_queue_size", 128))
+        scl_initial_per_class = int(self.params.get("scl_initial_per_class", 32))
+        scl_queues: List[deque] = [
+            deque(maxlen=scl_per_class_queue_size)
+            for _ in self.labels
+        ]
         trainable_parameters = [
             parameter
             for parameter in self.model.parameters()
@@ -257,7 +260,12 @@ class Trainer:
         print(f"R-Drop alpha: {rdrop_alpha}")
         print(f"SCL weight: {scl_weight}")
         print(f"SCL temperature: {scl_temperature}")
-        print(f"SCL queue size: {scl_queue_size}")
+        print(
+            "SCL queue: "
+            f"{scl_per_class_queue_size} per class, "
+            f"prefill {scl_initial_per_class} per class"
+        )
+        print(f"Configured total SCL queue size: {scl_queue_size}")
         print(
             "Effective batch size: "
             f"{int(self.params['batch_size']) * gradient_accumulation_steps}"
@@ -266,6 +274,12 @@ class Trainer:
 
         for epoch in range(num_epochs):
             print(f"\n>>> Epoch {epoch + 1}/{num_epochs}")
+            if scl_weight > 0:
+                self._refresh_scl_queues(
+                    queues=scl_queues,
+                    samples_per_class=scl_initial_per_class,
+                    epoch=epoch,
+                )
             self.model.train()
             epoch_loss = 0.0
             epoch_scl_loss = 0.0
@@ -300,13 +314,16 @@ class Trainer:
                             str(instance_id).split("__", 1)[0]
                             for instance_id in batch["ids"]
                         ]
+                        queue_entries = [
+                            entry
+                            for class_queue in scl_queues
+                            for entry in class_queue
+                        ]
                         contrastive_loss = self._queue_supervised_contrastive_loss(
                             features=features,
                             labels=batch_labels,
                             pair_ids=batch_pair_ids,
-                            queue_features=scl_queue_features,
-                            queue_labels=scl_queue_labels,
-                            queue_pair_ids=scl_queue_pair_ids,
+                            queue_entries=queue_entries,
                             temperature=scl_temperature,
                             min_queue_size=scl_min_queue_size,
                         )
@@ -324,9 +341,10 @@ class Trainer:
                             batch_labels.tolist(),
                             batch_pair_ids,
                         ):
-                            scl_queue_features.append(feature)
-                            scl_queue_labels.append(int(label))
-                            scl_queue_pair_ids.append(pair_id)
+                            label_index = int(label)
+                            scl_queues[label_index].append(
+                                (feature, label_index, pair_id)
+                            )
 
                 epoch_loss += loss.item()
                 scaled_loss = self.scaler.scale(loss) / gradient_accumulation_steps
@@ -416,29 +434,87 @@ class Trainer:
         )
         return 0.5 * (forward_kl + reverse_kl)
 
+    def _refresh_scl_queues(
+        self,
+        *,
+        queues: List[deque],
+        samples_per_class: int,
+        epoch: int,
+    ) -> None:
+        for class_queue in queues:
+            class_queue.clear()
+
+        rng = np.random.default_rng(int(self.params["seed"]) + epoch)
+        self.model.eval()
+
+        with torch.no_grad():
+            for label_index in range(len(self.labels)):
+                class_indices = np.flatnonzero(self.y_train == label_index)
+                if len(class_indices) == 0:
+                    continue
+
+                sample_count = min(samples_per_class, len(class_indices))
+                selected_indices = rng.choice(
+                    class_indices,
+                    size=sample_count,
+                    replace=False,
+                ).tolist()
+                subset = Subset(self.train_dataset, selected_indices)
+                loader = DataLoader(
+                    dataset=subset,
+                    batch_size=1,
+                    collate_fn=self.train_dataset.collate_fn,
+                    sampler=SequentialSampler(subset),
+                    num_workers=0,
+                )
+
+                with torch.autocast(
+                    device_type="cuda",
+                    dtype=self.amp_dtype,
+                    enabled=self.amp_enabled,
+                ):
+                    for batch in loader:
+                        self.model.forward(batch=batch, device=self.device)
+                        features = self.model.classifier_features()
+                        feature = torch.nn.functional.normalize(
+                            features.detach().float(),
+                            dim=-1,
+                        )[0]
+                        pair_id = str(batch["ids"][0]).split("__", 1)[0]
+                        queues[label_index].append(
+                            (feature, label_index, pair_id)
+                        )
+
+        self.model.train()
+        queue_sizes = ", ".join(
+            f"{self.labels[index]}={len(queue)}"
+            for index, queue in enumerate(queues)
+        )
+        print(f"SCL queue refreshed for epoch {epoch + 1}: {queue_sizes}")
+
     @staticmethod
     def _queue_supervised_contrastive_loss(
         *,
         features: torch.Tensor,
         labels: torch.Tensor,
         pair_ids: List[str],
-        queue_features: deque,
-        queue_labels: deque,
-        queue_pair_ids: deque,
+        queue_entries: List[Tuple[torch.Tensor, int, str]],
         temperature: float,
         min_queue_size: int,
     ) -> Optional[torch.Tensor]:
-        if len(queue_features) < min_queue_size:
+        if len(queue_entries) < min_queue_size:
             return None
 
         query_features = torch.nn.functional.normalize(features.float(), dim=-1)
-        key_features = torch.stack(list(queue_features)).to(device=query_features.device)
+        key_features = torch.stack(
+            [entry[0] for entry in queue_entries]
+        ).to(device=query_features.device)
         key_labels = torch.tensor(
-            list(queue_labels),
+            [entry[1] for entry in queue_entries],
             dtype=torch.long,
             device=query_features.device,
         )
-        stored_pair_ids = list(queue_pair_ids)
+        stored_pair_ids = [entry[2] for entry in queue_entries]
         same_label = labels.view(-1, 1).eq(key_labels.view(1, -1))
         same_pair = torch.tensor(
             [

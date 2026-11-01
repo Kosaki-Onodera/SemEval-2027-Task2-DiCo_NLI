@@ -79,6 +79,8 @@ R-Drop symmetric KL weight = 0.0
 SCL weight = 0.05
 SCL temperature = 0.07
 SCL queue size = 512
+SCL per-class queue size = 128
+SCL initial samples per class = 32
 LoRA r = 16
 LoRA alpha = 32
 LoRA targets = query_proj,value_proj
@@ -90,7 +92,7 @@ gradient checkpointing = enabled
 ## 输出位置
 
 ```text
-/kaggle/working/dico_nli_runs/deberta_v2_xxlarge_lora_track1_sclA005
+/kaggle/working/dico_nli_runs/deberta_v2_xxlarge_lora_track1_sclA005_balanced
 ```
 
 每个 epoch 的 adapter 会保存到：

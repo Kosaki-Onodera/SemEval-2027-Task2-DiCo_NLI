@@ -162,6 +162,8 @@ starter_kit/
 | `--scl_temperature` | `float` | No       | SCL temperature. Default: `0.07`.                                                                                       |
 | `--scl_queue_size`  | `int`   | No       | Maximum detached representation queue size. Default: `512`.                                                             |
 | `--scl_min_queue_size` | `int` | No      | Queue warmup length before SCL is applied. Default: `64`.                                                               |
+| `--scl_per_class_queue_size` | `int` | No | Maximum queue size for each label. Default: `128`.                                                                    |
+| `--scl_initial_per_class` | `int` | No    | Current-model samples used to prefill each class at epoch start. Default: `32`.                                        |
 | `--use_lora`        | `bool`  | No       | Wrap the classification model with a PEFT LoRA adapter.                                                                  |
 | `--load_in_4bit`    | `bool`  | No       | Load the base model in 4-bit NF4 for QLoRA. Requires `--use_lora`.                                                       |
 | `--lora_r`          | `int`   | No       | LoRA rank. Default: `16`.                                                                                                 |
@@ -252,6 +254,8 @@ python3 -u main.py \
     --scl_temperature 0.07 \
     --scl_queue_size 512 \
     --scl_min_queue_size 64 \
+    --scl_per_class_queue_size 128 \
+    --scl_initial_per_class 32 \
     --wd 1e-5 \
     --num_epochs 3 \
     --no-is_optuna_trial \

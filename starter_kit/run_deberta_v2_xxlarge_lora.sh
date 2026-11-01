@@ -19,6 +19,8 @@ SCL_WEIGHT="${SCL_WEIGHT:-0.05}"
 SCL_TEMPERATURE="${SCL_TEMPERATURE:-0.07}"
 SCL_QUEUE_SIZE="${SCL_QUEUE_SIZE:-512}"
 SCL_MIN_QUEUE_SIZE="${SCL_MIN_QUEUE_SIZE:-64}"
+SCL_PER_CLASS_QUEUE_SIZE="${SCL_PER_CLASS_QUEUE_SIZE:-128}"
+SCL_INITIAL_PER_CLASS="${SCL_INITIAL_PER_CLASS:-32}"
 
 KAGGLE_DATA_ROOT="/kaggle/input/datasets/gongbaoxin/dico-nli-dataset/final_data"
 if [[ -z "${DATA_ROOT:-}" ]]; then
@@ -30,7 +32,7 @@ if [[ -z "${DATA_ROOT:-}" ]]; then
 fi
 
 if [[ -d "/kaggle/working" ]]; then
-    DEFAULT_OUTPUT_DIR="/kaggle/working/dico_nli_runs/deberta_v2_xxlarge_lora_track1_sclA005"
+    DEFAULT_OUTPUT_DIR="/kaggle/working/dico_nli_runs/deberta_v2_xxlarge_lora_track1_sclA005_balanced"
 else
     DEFAULT_OUTPUT_DIR="${SCRIPT_DIR}/results/deberta_v2_xxlarge_lora_track1"
 fi
@@ -73,6 +75,8 @@ mkdir -p "${OUTPUT_DIR}"
     --scl_temperature "${SCL_TEMPERATURE}" \
     --scl_queue_size "${SCL_QUEUE_SIZE}" \
     --scl_min_queue_size "${SCL_MIN_QUEUE_SIZE}" \
+    --scl_per_class_queue_size "${SCL_PER_CLASS_QUEUE_SIZE}" \
+    --scl_initial_per_class "${SCL_INITIAL_PER_CLASS}" \
     --wd 1e-5 \
     --num_epochs "${EPOCHS}" \
     --no-is_optuna_trial \

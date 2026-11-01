@@ -52,6 +52,8 @@ if __name__ == "__main__":
     parser.add_argument("--scl_temperature", type=float, default=0.07, help="Temperature for supervised contrastive loss.")
     parser.add_argument("--scl_queue_size", type=int, default=512, help="Maximum number of detached representations in the SCL queue.")
     parser.add_argument("--scl_min_queue_size", type=int, default=64, help="Minimum queue size before SCL is applied.")
+    parser.add_argument("--scl_per_class_queue_size", type=int, default=128, help="Maximum SCL queue size for each label.")
+    parser.add_argument("--scl_initial_per_class", type=int, default=32, help="Number of current-model representations used to prefill each class queue at epoch start.")
     parser.add_argument("--use_lora", action=argparse.BooleanOptionalAction, default=False, help="Wrap the classification model with a PEFT LoRA adapter.")
     parser.add_argument("--load_in_4bit", action=argparse.BooleanOptionalAction, default=False, help="Load the base model in 4-bit NF4 for QLoRA training.")
     parser.add_argument("--lora_r", type=int, default=16, help="LoRA rank.")
@@ -105,6 +107,8 @@ if __name__ == "__main__":
     assert args.scl_temperature > 0, "--scl_temperature must be positive."
     assert args.scl_queue_size >= 2, "--scl_queue_size must be at least 2."
     assert 2 <= args.scl_min_queue_size <= args.scl_queue_size, "--scl_min_queue_size must be between 2 and --scl_queue_size."
+    assert args.scl_per_class_queue_size >= 2, "--scl_per_class_queue_size must be at least 2."
+    assert 1 <= args.scl_initial_per_class <= args.scl_per_class_queue_size, "--scl_initial_per_class must be between 1 and --scl_per_class_queue_size."
     assert not (args.rdrop_alpha > 0 and args.scl_weight > 0), "Do not enable R-Drop and SCL in the same controlled experiment."
     assert args.lora_r > 0, "--lora_r must be positive."
     assert args.lora_alpha > 0, "--lora_alpha must be positive."
@@ -161,6 +165,8 @@ if __name__ == "__main__":
         "scl_temperature": args.scl_temperature,
         "scl_queue_size": args.scl_queue_size,
         "scl_min_queue_size": args.scl_min_queue_size,
+        "scl_per_class_queue_size": args.scl_per_class_queue_size,
+        "scl_initial_per_class": args.scl_initial_per_class,
         "use_lora": args.use_lora,
         "load_in_4bit": args.load_in_4bit,
         "lora_r": args.lora_r,

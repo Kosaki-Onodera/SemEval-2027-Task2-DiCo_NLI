@@ -795,6 +795,8 @@ contrastive learning 提供同类正样本和异类负样本。它不是严格�
 labels participating in SCL = all four labels
 queue size = 512
 minimum queue size = 64
+per-class queue capacity = 128
+initial samples per class = 32
 temperature = 0.07
 SCL weight = 0.05
 NEGATIVE class weight = 1.0
@@ -809,6 +811,10 @@ training_config.json
 
 表示来自 DeBERTa classifier 前的 pooled output，不使用四个 logits。
 
+队列按类别独立维护，不再使用全局随机 FIFO。每个 epoch 开始时使用当前
+模型为每类随机预填充 32 条无梯度表示，之后用对应类别的 FIFO 队列更新。
+分类 CE 仍按正常随机顺序训练，不用 WeightedRandomSampler 改变标签分布。
+
 正样本定义：
 
 ```text
@@ -821,8 +827,21 @@ near-duplicate 泄漏。
 计划输出目录：
 
 ```text
-/kaggle/working/dico_nli_runs/deberta_v2_xxlarge_lora_track1_sclA005
+/kaggle/working/dico_nli_runs/deberta_v2_xxlarge_lora_track1_sclA005_balanced
 ```
+
+本地 ModernBERT smoke test 已验证：
+
+```text
+每类预填充队列 = 32
+SCL weight = 0.05
+temperature = 0.07
+平均 CE + SCL loss = 1.8770
+平均 SCL loss = 6.9298
+peak CUDA memory = 0.85 GiB
+```
+
+该测试只验证实现正确性，不代表 xxlarge 质量。
 
 ### E7：R-Drop 正则化
 
