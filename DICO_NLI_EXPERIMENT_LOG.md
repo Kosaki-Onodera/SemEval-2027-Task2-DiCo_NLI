@@ -98,6 +98,7 @@ Rev(EQUIVALENCE)         = EQUIVALENCE
 | E3a | DeBERTa-v2-xxlarge | FP16 LoRA，pooler 冻结 | final dev | 1 | 0.2719 | 0.1119 | 0.0686 | 失败 |
 | E3b | DeBERTa-v2-xxlarge | FP32 LoRA，pooler 冻结 | final dev | 3 | 0.3402 | 0.2996 | 0.1661 | 失败/诊断 |
 | E4 | DeBERTa-v2-xxlarge | FP32 LoRA，pooler 可训练 | final dev | 3 | 0.6802 | 0.7437 | **0.6751** | 有效开发实验 |
+| E5 | DeBERTa-v2-xxlarge | FP32 LoRA，N 权重 1.5 | final dev | 3 | 0.4395 | 0.4404 | 0.3502 | 失败，已拒绝 |
 
 ## 6. E1：ModernBERT trial smoke test
 
@@ -419,6 +420,103 @@ DeBERTa HardCons：  +0.0144
 - ModernBERT 全参数微调取得更高 Weighted F1 和 SoftCons；
 - 两个系统体现了不同的准确性/双向联合正确性权衡。
 
+## 10.1 E5：NEGATIVE_OTHER 类别加权失败实验
+
+### 实验目的
+
+E4 的 `NEGATIVE_OTHER` 只有：
+
+```text
+precision = 0.6042
+recall    = 0.2736
+F1        = 0.3766
+```
+
+因此保持其他条件不变，只提高 `NEGATIVE_OTHER` 的交叉熵权重：
+
+```text
+BACKWARD         1.0
+EQUIVALENCE      1.0
+FORWARD          1.0
+NEGATIVE_OTHER   1.5
+```
+
+### 配置
+
+| 项目 | 值 |
+|---|---|
+| 代码 | commit `d13c1d8` |
+| 模型 | `microsoft/deberta-v2-xxlarge` |
+| 训练方式 | 标准 LoRA，FP32 |
+| Micro batch | 1 |
+| Gradient accumulation | 16 |
+| Effective batch | 16 |
+| Max length | 128 |
+| Learning rate | `2e-5` |
+| Epochs | 3 |
+| LoRA r / alpha | 16 / 32 |
+| LoRA targets | `query_proj,value_proj` |
+| Modules to save | `classifier,pooler` |
+| NEGATIVE loss weight | 1.5 |
+| 运行方式 | Kaggle Save & Run All，1 小时 45 分 |
+
+### 每轮结果
+
+| Epoch | Weighted F1 | SoftCons | HardCons |
+|---:|---:|---:|---:|
+| 1 | 0.4001 | 0.4116 | 0.2924 |
+| 2 | 0.4289 | 0.4260 | 0.3321 |
+| 3 | **0.4395** | **0.4404** | **0.3502** |
+
+### Epoch 3 标签指标
+
+| Label | Precision | Recall | F1 |
+|---|---:|---:|---:|
+| BACKWARD_ENTAILMENT | 0.4579 | 0.7158 | 0.5585 |
+| EQUIVALENCE | 0.5464 | 0.5747 | 0.5602 |
+| FORWARD_ENTAILMENT | 0.4693 | 0.4421 | 0.4553 |
+| NEGATIVE_OTHER | 0.0000 | 0.0000 | 0.0000 |
+
+106 个 `NEGATIVE_OTHER` 样本的预测为：
+
+```text
+NEGATIVE -> BACKWARD     38
+NEGATIVE -> EQUIVALENCE  27
+NEGATIVE -> FORWARD      41
+NEGATIVE -> NEGATIVE      0
+```
+
+整个 dev 只有 1 条样本被预测为 `NEGATIVE_OTHER`。
+
+### 结论
+
+- 提高 NEGATIVE 权重没有让模型更多预测 NEGATIVE；
+- 训练反而明显失稳，三个主指标均大幅下降；
+- NEGATIVE F1 变为 0；
+- 该结果不能用于论文主张，也不能替换 E4；
+- 在缺少完整 loss 日志时，不能把原因简单归为“类别权重过大”；
+- 当前应停止继续增大类别权重。
+
+### 产物
+
+```text
+D:\下载\dico_nli_deberta_xxlarge_lora_nweight15_fp32.zip
+```
+
+大小：
+
+```text
+112,028,610 bytes
+```
+
+SHA256：
+
+```text
+9d084b367069b5ebff8ba65d1d334a845be9b060f55107a2b33087faf0807884
+```
+
+Adapter 配置与原模型一致，`classifier` 和 `pooler` 仍正确保存在 `modules_to_save` 中。
+
 ## 11. 产物
 
 ### 11.1 当前最佳 DeBERTa adapter
@@ -530,13 +628,13 @@ f81fe16  English-only project snapshot
 - 完整 Kaggle 环境包版本；
 - official test prediction；
 - 多随机种子实验；
-- `NEGATIVE_OTHER` 加权实验。
+- E4 logits 校准实验。
 
 ## 14. 下一组优先实验
 
 ### E5：NEGATIVE_OTHER 类别加权
 
-状态：代码已实现，等待 Kaggle 结果。
+状态：已运行，结果失败，已拒绝。
 
 保持 E4 其他条件不变，只改变类别权重：
 
@@ -561,6 +659,8 @@ NEGATIVE_OTHER   1.5
 /kaggle/working/dico_nli_runs/deberta_v2_xxlarge_lora_track1_nweight15
 ```
 
+实际结果：见 10.1。不要再重复 `NEGATIVE_OTHER=1.5` 的该配置。
+
 评价标准：
 
 - NEGATIVE F1 是否从 0.3766 明显提升；
@@ -570,8 +670,9 @@ NEGATIVE_OTHER   1.5
 
 ### 后续候选
 
-- NEGATIVE 权重 2.0；
-- 对 dev logits 做 NEGATIVE 类别偏置校准；
+- 直接加载 E4 checkpoint，对 dev logits 做 NEGATIVE 类别偏置校准；
+- 比较偏置前后 Weighted F1、SoftCons、HardCons；
+- 不修改 E4 基座或 adapter；
 - 增加 LoRA target modules；
 - 使用更多随机种子；
 - 保存完整训练日志和显存统计。
@@ -594,4 +695,6 @@ NEGATIVE_OTHER   1.5
 - 不能只因为 Weighted F1 较高就声称方向一致性更好；
 - 不能声称 DeBERTa LoRA 已全面超过 ModernBERT；
 - 不能把缺失的 pooler/classifier 初始化为模型加载错误。
+- 不能把 E5 的 NEGATIVE F1=0 归因于类别权重不足；
+- 不能继续使用 NEGATIVE weight 1.5 的 E5 adapter。
 

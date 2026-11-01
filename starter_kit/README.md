@@ -241,7 +241,7 @@ python3 -u main.py \
     --lr 2e-5 \
     --batch_size 1 \
     --gradient_accumulation_steps 16 \
-    --negative_class_weight 1.5 \
+    --negative_class_weight 1.0 \
     --wd 1e-5 \
     --num_epochs 3 \
     --no-is_optuna_trial \
