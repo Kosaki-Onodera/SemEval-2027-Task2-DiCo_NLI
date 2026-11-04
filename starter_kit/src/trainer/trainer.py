@@ -69,7 +69,10 @@ class Trainer:
         self.device: torch.device = self.configure_cuda()
         self.amp_dtype = self._resolve_amp_dtype(str(self.params.get("compute_dtype", "float16")))
         self.amp_enabled = (
-            bool(self.params.get("use_lora", False))
+            (
+                bool(self.params.get("use_lora", False))
+                or bool(self.params.get("use_amp", False))
+            )
             and self.device.type == "cuda"
             and self.amp_dtype != torch.float32
         )
@@ -500,10 +503,17 @@ class Trainer:
                     if self.params["optuna"].should_prune():
                         raise optuna.TrialPruned()
 
-            if self.params.get("save_path") is not None and self.params.get("use_lora", False):
+            if (
+                self.params.get("save_path") is not None
+                and (
+                    self.params.get("use_lora", False)
+                    or self.params.get("save_each_epoch", False)
+                )
+            ):
                 checkpoint_path = Path(str(self.params["save_path"])) / "checkpoints" / f"epoch_{epoch + 1}"
                 checkpoint_path.mkdir(parents=True, exist_ok=True)
-                print(f"Saving LoRA adapter for epoch {epoch + 1} to: {checkpoint_path}")
+                checkpoint_kind = "LoRA adapter" if self.params.get("use_lora", False) else "full model"
+                print(f"Saving {checkpoint_kind} for epoch {epoch + 1} to: {checkpoint_path}")
                 self.model.save(path=str(checkpoint_path))
             
             if self.params["epoch_to_stop"] is not None and (epoch + 1) == int(self.params["epoch_to_stop"]):

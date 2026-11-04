@@ -65,6 +65,7 @@ if __name__ == "__main__":
     parser.add_argument("--adapter_path", type=str, help="Optional existing PEFT adapter directory to load for training or inference.")
     parser.add_argument("--gradient_checkpointing", action=argparse.BooleanOptionalAction, default=False, help="Trade compute for lower activation memory.")
     parser.add_argument("--compute_dtype", choices=["float16", "bfloat16", "float32"], default="float16", help="Compute dtype for model loading and 4-bit activations.")
+    parser.add_argument("--use_amp", action=argparse.BooleanOptionalAction, default=False, help="Enable CUDA autocast for full fine-tuning. LoRA enables autocast automatically.")
     parser.add_argument("--deterministic", action=argparse.BooleanOptionalAction, default=True, help="Enable deterministic PyTorch algorithms. Disabled automatically for 4-bit models.")
 
     parser.add_argument("--is_optuna_trial", action=argparse.BooleanOptionalAction, help="Whether this run is an Optuna hyperparameter optimization trial.", required=True)
@@ -73,6 +74,7 @@ if __name__ == "__main__":
     parser.add_argument("--n_trials", type=int, help="Optuna number of trials")
     
     parser.add_argument("--save_path", type=str, help="Path to save the trained model.")
+    parser.add_argument("--save_each_epoch", action=argparse.BooleanOptionalAction, default=False, help="Save a full-model checkpoint after each epoch.")
     parser.add_argument("--epoch_to_stop", type=int, help="Epoch number to stop training in case intermediate saving is desired.")
     parser.add_argument("--results_dir", type=str, default="results", help="Directory where timestamped prediction CSV files will be written.")
     parser.add_argument("--reference_path", type=str, help="Optional hidden reference CSV for official DiCo-NLI scoring.")
@@ -145,6 +147,7 @@ if __name__ == "__main__":
         assert os.path.isdir(s=os.path.dirname(p=args.save_path)), "--save_path must be a valid path to a directory."
         assert not args.is_optuna_trial, "--save_path must not be set when --is_optuna_trial is True."
         assert args.do_train, "--save_path can only be set if --do_train is True."  
+    assert not args.save_each_epoch or args.save_path is not None, "--save_each_epoch requires --save_path."
     if args.epoch_to_stop is not None:
         assert 1 <= args.epoch_to_stop <= args.num_epochs, "--epoch_to_stop must be between 1 and num_epochs."
         assert not args.is_optuna_trial, "--epoch_to_stop not be set when --is_optuna_trial is True."
@@ -186,8 +189,10 @@ if __name__ == "__main__":
         "adapter_path": args.adapter_path,
         "gradient_checkpointing": args.gradient_checkpointing,
         "compute_dtype": args.compute_dtype,
+        "use_amp": args.use_amp,
         "deterministic": args.deterministic,
         "save_path": args.save_path,
+        "save_each_epoch": args.save_each_epoch,
         "epoch_to_stop": args.epoch_to_stop,
         "results_dir": args.results_dir,
         "reference_path": args.reference_path,

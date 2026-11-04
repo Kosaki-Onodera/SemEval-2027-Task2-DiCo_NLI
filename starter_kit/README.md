@@ -175,12 +175,14 @@ starter_kit/
 | `--adapter_path`    | `str`   | No       | Existing PEFT adapter directory for continued training or inference.                                                    |
 | `--gradient_checkpointing` | `bool` | No | Trade compute for lower activation memory.                                                                             |
 | `--compute_dtype`   | `str`   | No       | `float16`, `bfloat16`, or `float32`. Use `float16` on T4/P100.                                                            |
+| `--use_amp`         | `bool`  | No       | Enable CUDA autocast for full fine-tuning. LoRA enables AMP automatically.                                               |
 | `--deterministic`   | `bool`  | No       | Enable deterministic algorithms. Automatically disabled for 4-bit models.                                                |
 | `--is_optuna_trial` | `bool`  | Yes      | Whether this run is an Optuna hyperparameter optimization trial.                                                         |
 | `--study_name`      | `str`   | No       | Name of the Optuna study.                                                                                                |
 | `--storage_name`    | `str`   | No       | Name of the Optuna storage.                                                                                              |
 | `--n_trials`        | `int`   | No       | Number of Optuna trials.                                                                                                 |
 | `--save_path`       | `str`   | No       | Path to save the trained model.                                                                                          |
+| `--save_each_epoch` | `bool`  | No       | Save a full-model checkpoint after every epoch.                                                                          |
 | `--epoch_to_stop`   | `int`   | No       | Epoch number at which to stop training for intermediate saving.                                                          |
 | `--results_dir`     | `str`   | No       | Directory where timestamped prediction CSV files are written. Defaults to `results`.                                     |
 | `--reference_path`  | `str`   | No       | Hidden reference CSV used to compute official DiCo-NLI scores. Must contain the same `instance_id`s as the evaluated file. |

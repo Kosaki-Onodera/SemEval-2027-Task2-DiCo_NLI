@@ -875,6 +875,80 @@ f81fe16  English-only project snapshot
 
 ## 14. 下一组优先实验
 
+### E11：ModernBERT-large 全参数微调
+
+状态：代码已实现，等待 Kaggle 结果。
+
+配置：
+
+```text
+model = answerdotai/ModernBERT-large
+training = full fine-tuning
+precision = FP16 autocast + GradScaler
+gradient checkpointing = enabled
+micro batch = 1
+gradient accumulation = 16
+max length = 128
+learning rate = 2e-5
+epochs = 3
+SCL / R-Drop / pair consistency = disabled
+```
+
+目的：
+
+- 与 ModernBERT-base 全参数基线形成同训练方式的模型规模比较；
+- 检查 395M encoder 是否能改善 N 类边界和 HardCons；
+- 每个 epoch 保存完整 checkpoint，以 dev 三项指标选择最佳轮次。
+
+计划输出：
+
+```text
+/kaggle/working/dico_nli_runs/modernbert_large_full
+```
+
+本地 ModernBERT-base 全参数 smoke test 已验证：
+
+```text
+no LoRA
+FP16 autocast + GradScaler
+gradient checkpointing
+full checkpoints saved per epoch
+peak CUDA memory = 2.90 GiB
+```
+
+该测试使用 trial 数据的 32-sample micro-batch，仅验证代码路径；large 模型
+在 Kaggle 上默认使用 batch=1。
+
+### E10：ModernBERT-large 两阶段复现
+
+状态：代码已实现，等待 Kaggle 结果。
+
+配置：
+
+```text
+base model = answerdotai/ModernBERT-large
+Stage 1 = CE + class-balanced SCL, 3 epochs
+Stage 2 = CE + reversal consistency, up to 2 epochs
+LoRA targets = Wqkv,Wo
+LoRA r / alpha = 16 / 32
+micro batch = 1
+gradient accumulation = 16
+max length = 128
+```
+
+目的：
+
+- 检查更大编码器是否改善 E4 的 HardCons；
+- 比较 ModernBERT-large 与 ModernBERT-base 的参数效率；
+- 验证 SCL 与 reversal consistency 是否跨 encoder 稳定。
+
+计划输出：
+
+```text
+/kaggle/working/dico_nli_runs/modernbert_large_scl_balanced
+/kaggle/working/dico_nli_runs/modernbert_large_pair_consistency
+```
+
 ### E9：第二阶段 reversal consistency
 
 状态：已运行 1 epoch，F1 提升但一致性下降；需加入 NEGATIVE mass penalty 后再试。

@@ -84,6 +84,11 @@ class Model:
 
         if self.use_lora:
             self.model = self._attach_lora(params)
+        elif self.gradient_checkpointing:
+            if hasattr(self.model.config, "use_cache"):
+                self.model.config.use_cache = False
+            self.model.gradient_checkpointing_enable()
+            print("Gradient checkpointing enabled for full fine-tuning.")
 
         self._last_features: torch.Tensor | None = None
         self._classifier_module = None

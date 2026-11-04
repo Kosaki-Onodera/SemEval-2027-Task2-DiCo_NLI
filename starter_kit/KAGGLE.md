@@ -160,3 +160,51 @@ epochs = 1
 
 第二阶段会把同一 `reverse_pair_id` 的两条序列组成一个训练 unit。一致性项采用
 有界 Jensen-Shannon divergence，只作用于三个可逆标签。
+
+## ModernBERT-large 两阶段实验
+
+Stage 1：
+
+```bash
+DATA_ROOT=/kaggle/input/datasets/gongbaoxin/dico-nli-dataset/final_data \
+bash starter_kit/run_modernbert_large_scl.sh
+```
+
+Stage 2：
+
+```bash
+STAGE1_ADAPTER=/kaggle/working/dico_nli_runs/modernbert_large_scl_balanced/checkpoints/epoch_3 \
+DATA_ROOT=/kaggle/input/datasets/gongbaoxin/dico-nli-dataset/final_data \
+bash starter_kit/run_modernbert_large_pair_consistency.sh
+```
+
+ModernBERT-large 使用 LoRA targets `Wqkv,Wo`，与 DeBERTa 的
+`query_proj,value_proj` 不同。
+
+## ModernBERT-large 全参数微调
+
+```bash
+DATA_ROOT=/kaggle/input/datasets/gongbaoxin/dico-nli-dataset/final_data \
+bash starter_kit/run_modernbert_large_full.sh
+```
+
+默认配置：
+
+```text
+full fine-tuning
+FP16 AMP + GradScaler
+gradient checkpointing
+micro batch = 1
+gradient accumulation = 16
+max length = 128
+learning rate = 2e-5
+3 epochs
+```
+
+每个 epoch 的完整模型保存到：
+
+```text
+/kaggle/working/dico_nli_runs/modernbert_large_full/checkpoints/
+```
+
+完整 checkpoint 较大，每个约 1.6 GB。
