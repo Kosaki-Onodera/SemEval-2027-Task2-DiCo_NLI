@@ -102,6 +102,7 @@ Rev(EQUIVALENCE)         = EQUIVALENCE
 | E6 | E4 adapter + dev logit 校准 | 不重新训练 | final dev | bias=0 | 0.6825 | 0.7437 | 0.6751 | 主候选 |
 | E7 | DeBERTa-v2-xxlarge | FP32 LoRA + R-Drop 0.5 | final dev | 3 | 0.4404 | 0.4477 | 0.3394 | 失败，已拒绝 |
 | E9 | E4 + pair consistency | FP32 LoRA，1 epoch | final dev | 1 | **0.7031** | 0.6859 | 0.6354 | F1 最高，存在权衡 |
+| E11 | ModernBERT-large | 全参数微调 | final dev | 3 | **0.8330** | **0.8448** | **0.8231** | 当前最佳 |
 
 ## 6. E1：ModernBERT trial smoke test
 
@@ -877,7 +878,7 @@ f81fe16  English-only project snapshot
 
 ### E11：ModernBERT-large 全参数微调
 
-状态：代码已实现，等待 Kaggle 结果。
+状态：已完成，epoch 3 为当前最佳系统。
 
 配置：
 
@@ -918,6 +919,33 @@ peak CUDA memory = 2.90 GiB
 
 该测试使用 trial 数据的 32-sample micro-batch，仅验证代码路径；large 模型
 在 Kaggle 上默认使用 batch=1。
+
+### E11 每轮结果
+
+| Epoch | Weighted F1 | SoftCons | HardCons |
+|---:|---:|---:|---:|
+| 1 | 0.7819 | 0.8087 | 0.7617 |
+| 2 | 0.8211 | 0.8051 | 0.7834 |
+| 3 | **0.8330** | **0.8448** | **0.8231** |
+
+Epoch 3 在三个指标上同时优于前两轮，因此选择：
+
+```text
+/kaggle/working/dico_nli_runs/
+modernbert_large_full/checkpoints/epoch_3
+```
+
+与 ModernBERT-base 全参数结果相比：
+
+```text
+Weighted F1：0.6925 -> 0.8330（+0.1405）
+SoftCons：   0.7762 -> 0.8448（+0.0686）
+HardCons：   0.6606 -> 0.8231（+0.1625）
+```
+
+这组结果表明，在当前 English track 和训练协议下，ModernBERT-large
+全参数微调显著优于 ModernBERT-base、DeBERTa-v2-xxlarge LoRA 以及 E9
+一致性变体。
 
 ### E10：ModernBERT-large 两阶段复现
 
