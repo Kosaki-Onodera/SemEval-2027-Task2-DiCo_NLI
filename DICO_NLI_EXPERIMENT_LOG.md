@@ -947,6 +947,38 @@ HardCons：   0.6606 -> 0.8231（+0.1625）
 全参数微调显著优于 ModernBERT-base、DeBERTa-v2-xxlarge LoRA 以及 E9
 一致性变体。
 
+### E11 epoch 3 标签指标
+
+| Label | Precision | Recall | F1 |
+|---|---:|---:|---:|
+| BACKWARD_ENTAILMENT | 0.9037 | 0.8895 | 0.8966 |
+| EQUIVALENCE | 0.8758 | 0.8103 | 0.8418 |
+| FORWARD_ENTAILMENT | 0.8737 | 0.8737 | 0.8737 |
+| NEGATIVE_OTHER | 0.5902 | 0.6792 | 0.6316 |
+
+混淆矩阵：
+
+| Gold \ Pred | BACKWARD | EQUIVALENCE | FORWARD | NEGATIVE |
+|---|---:|---:|---:|---:|
+| BACKWARD | 169 | 5 | 3 | 13 |
+| EQUIVALENCE | 7 | 141 | 7 | 19 |
+| FORWARD | 1 | 5 | 166 | 18 |
+| NEGATIVE | 10 | 10 | 14 | 72 |
+
+单实例准确数：
+
+```text
+169 + 141 + 166 + 72 = 548 / 660
+Accuracy = 0.8303
+```
+
+剩余主要错误：
+
+- 34/106 个 NEGATIVE 被误判为可逆标签；
+- 50 个可逆样本被误判为 NEGATIVE；
+- NEGATIVE 仍是唯一 F1 低于 0.84 的类别；
+- 方向标签错误已经很少，继续提高 HardCons 的空间有限。
+
 ### E10：ModernBERT-large 两阶段复现
 
 状态：代码已实现，等待 Kaggle 结果。
