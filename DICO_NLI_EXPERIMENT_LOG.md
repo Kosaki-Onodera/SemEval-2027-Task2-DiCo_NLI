@@ -101,6 +101,7 @@ Rev(EQUIVALENCE)         = EQUIVALENCE
 | E5 | DeBERTa-v2-xxlarge | FP32 LoRA，N 权重 1.5 | final dev | 3 | 0.4395 | 0.4404 | 0.3502 | 失败，已拒绝 |
 | E6 | E4 adapter + dev logit 校准 | 不重新训练 | final dev | bias=0 | 0.6825 | 0.7437 | 0.6751 | 主候选 |
 | E7 | DeBERTa-v2-xxlarge | FP32 LoRA + R-Drop 0.5 | final dev | 3 | 0.4404 | 0.4477 | 0.3394 | 失败，已拒绝 |
+| E9 | E4 + pair consistency | FP32 LoRA，1 epoch | final dev | 1 | **0.7031** | 0.6859 | 0.6354 | F1 最高，存在权衡 |
 
 ## 6. E1：ModernBERT trial smoke test
 
@@ -665,6 +666,99 @@ SHA256：
 35f35cb8c912fdd0704f4e86d24c870d167f9289c21bc20d8397d21c36a47995
 ```
 
+## 10.4 E9：E4 + Reversal Consistency，1 epoch
+
+### 配置
+
+| 项目 | 值 |
+|---|---|
+| Stage 1 | E4 epoch 3 adapter |
+| 第二阶段 epochs | 1 |
+| Learning rate | `1e-5` |
+| Pair consistency weight | 0.1 |
+| 一致性距离 | Jensen-Shannon divergence |
+| SCL | disabled |
+| R-Drop | disabled |
+| Compute dtype | FP32 |
+| Max length | 128 |
+| Batch / accumulation | 1 / 16 |
+| GPU | Kaggle Tesla T4 |
+| Torch | 2.11.0+cu128 |
+| Transformers | 5.16.1 |
+
+### 总体结果
+
+| 模型 | Weighted F1 | SoftCons | HardCons |
+|---|---:|---:|---:|
+| E4 baseline | 0.6802 | 0.7437 | 0.6751 |
+| E9 pair consistency | **0.7031** | 0.6859 | 0.6354 |
+
+与 E4 的差值：
+
+```text
+Weighted F1：+0.0229
+SoftCons：   -0.0578
+HardCons：   -0.0397
+```
+
+### E9 标签指标
+
+| Label | Precision | Recall | F1 |
+|---|---:|---:|---:|
+| BACKWARD_ENTAILMENT | 0.7566 | 0.7526 | 0.7546 |
+| EQUIVALENCE | 0.7337 | 0.7126 | 0.7230 |
+| FORWARD_ENTAILMENT | 0.7487 | 0.7684 | 0.7584 |
+| NEGATIVE_OTHER | 0.4766 | 0.4811 | 0.4789 |
+
+E9 相比 E4：
+
+- NEGATIVE recall 从 0.2736 提升到 0.4811；
+- NEGATIVE F1 从 0.3766 提升到 0.4789；
+- Weighted F1 超过 E4 和 ModernBERT；
+- BACKWARD recall 下降；
+- 大量可逆样本被预测为 NEGATIVE，导致 SoftCons/HardCons 降低。
+
+### 关键诊断
+
+当前一致性项只对三个可逆类别重新归一化后计算 JSD，因此没有显式惩罚：
+
+```text
+gold 为可逆关系，但模型预测 NEGATIVE_OTHER
+```
+
+这是 E9 虽然提高 N 类识别和总 F1，却降低方向一致性的直接结构原因。
+
+### 改进方向
+
+下一版应在可逆类别 JSD 之外加入双向 NEGATIVE mass penalty：
+
+```text
+L_cons = JSD_rev(p1, Rev(p2))
+       + lambda_n * [-log(1 - p1[N]) - log(1 - p2[N])]
+```
+
+仍只对 gold 可逆 pair 应用。
+
+### 产物
+
+```text
+D:\下载\dico_nli_e4_pair_consistency_fp32.zip
+```
+
+大小：
+
+```text
+56,033,251 bytes
+```
+
+SHA256：
+
+```text
+83619095e47e9b3a4699e4773cac88d8c189b007b171ae486d7ac69c41514193
+```
+
+该结果目前是 Weighted F1 最高的单模型，但不是三项指标最均衡的系统。
+
 ## 11. 产物
 
 ### 11.1 当前最佳 DeBERTa adapter
@@ -783,7 +877,7 @@ f81fe16  English-only project snapshot
 
 ### E9：第二阶段 reversal consistency
 
-状态：代码已实现，等待完整两阶段 Kaggle 结果。
+状态：已运行 1 epoch，F1 提升但一致性下降；需加入 NEGATIVE mass penalty 后再试。
 
 第一阶段配置见 E8。第二阶段从 E8 的最佳 adapter 继续训练：
 
@@ -829,6 +923,8 @@ reversal pairs = 336
 singles = 125
 pair consistency 反向传播 = 成功
 ```
+
+实际 xxlarge 结果和诊断见 10.4。
 
 ### E8：动态队列 Supervised Contrastive Learning，版本 A
 
@@ -891,6 +987,28 @@ peak CUDA memory = 0.85 GiB
 ```
 
 该测试只验证实现正确性，不代表 xxlarge 质量。
+
+### E8 xxlarge 阶段性结果
+
+2026-11-04 的 Kaggle Stage 1 在 epoch 2 得到：
+
+| Epoch | Weighted F1 | SoftCons | HardCons |
+|---:|---:|---:|---:|
+| 2 | 0.4238 | 0.4079 | 0.3177 |
+
+对比 E4 epoch 2：
+
+```text
+E4:  0.6598 / 0.7401 / 0.6606
+E8:  0.4238 / 0.4079 / 0.3177
+```
+
+判断：
+
+- 差距过大，不能进入当前版本的 Stage 2；
+- 当前 SCL 配置或代码路径存在显著问题；
+- 后续先做 `SCL_WEIGHT=0` 的当前代码对照；
+- 或直接以 E4 adapter 作为 Stage 1，单独验证反向一致性损失。
 
 ### E7：R-Drop 正则化
 
