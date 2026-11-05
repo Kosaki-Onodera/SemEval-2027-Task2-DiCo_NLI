@@ -7,7 +7,7 @@ MODEL_PATH="${MODEL_PATH:-answerdotai/ModernBERT-large}"
 MAX_LENGTH="${MAX_LENGTH:-128}"
 MICRO_BATCH_SIZE="${MICRO_BATCH_SIZE:-1}"
 GRADIENT_ACCUMULATION_STEPS="${GRADIENT_ACCUMULATION_STEPS:-16}"
-EPOCHS="${EPOCHS:-3}"
+EPOCHS="${EPOCHS:-5}"
 LEARNING_RATE="${LEARNING_RATE:-2e-5}"
 COMPUTE_DTYPE="${COMPUTE_DTYPE:-float16}"
 
@@ -21,9 +21,9 @@ if [[ -z "${DATA_ROOT:-}" ]]; then
 fi
 
 if [[ -d "/kaggle/working" ]]; then
-    DEFAULT_OUTPUT_DIR="/kaggle/working/dico_nli_runs/modernbert_large_full"
+    DEFAULT_OUTPUT_DIR="/kaggle/working/dico_nli_runs/modernbert_large_full_5ep"
 else
-    DEFAULT_OUTPUT_DIR="${SCRIPT_DIR}/results/modernbert_large_full"
+    DEFAULT_OUTPUT_DIR="${SCRIPT_DIR}/results/modernbert_large_full_5ep"
 fi
 OUTPUT_DIR="${OUTPUT_DIR:-${DEFAULT_OUTPUT_DIR}}"
 

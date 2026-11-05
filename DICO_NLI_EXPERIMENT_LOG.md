@@ -876,6 +876,32 @@ f81fe16  English-only project snapshot
 
 ## 14. 下一组优先实验
 
+### E13：ModernBERT-large 全参数 5 epochs
+
+状态：代码已配置，等待 Kaggle 结果。
+
+该实验沿用 E11 的全部设置，只把训练轮数从 3 改为 5：
+
+```text
+model = answerdotai/ModernBERT-large
+full fine-tuning
+FP16 AMP + GradScaler
+gradient checkpointing
+micro batch = 1
+gradient accumulation = 16
+max length = 128
+learning rate = 2e-5
+epochs = 5
+```
+
+为了不覆盖 E11 的 3-epoch 输出，新输出目录为：
+
+```text
+/kaggle/working/dico_nli_runs/modernbert_large_full_5ep
+```
+
+目标是比较 epoch 4、5 是否继续改善 dev 指标，或出现明显过拟合。
+
 ### E11：ModernBERT-large 全参数微调
 
 状态：已完成，epoch 3 为当前最佳系统。

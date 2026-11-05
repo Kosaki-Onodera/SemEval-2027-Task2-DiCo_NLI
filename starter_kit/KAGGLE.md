@@ -198,13 +198,13 @@ micro batch = 1
 gradient accumulation = 16
 max length = 128
 learning rate = 2e-5
-3 epochs
+5 epochs
 ```
 
 每个 epoch 的完整模型保存到：
 
 ```text
-/kaggle/working/dico_nli_runs/modernbert_large_full/checkpoints/
+/kaggle/working/dico_nli_runs/modernbert_large_full_5ep/checkpoints/
 ```
 
 完整 checkpoint 较大，每个约 1.6 GB。
