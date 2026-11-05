@@ -102,7 +102,8 @@ Rev(EQUIVALENCE)         = EQUIVALENCE
 | E6 | E4 adapter + dev logit 校准 | 不重新训练 | final dev | bias=0 | 0.6825 | 0.7437 | 0.6751 | 主候选 |
 | E7 | DeBERTa-v2-xxlarge | FP32 LoRA + R-Drop 0.5 | final dev | 3 | 0.4404 | 0.4477 | 0.3394 | 失败，已拒绝 |
 | E9 | E4 + pair consistency | FP32 LoRA，1 epoch | final dev | 1 | **0.7031** | 0.6859 | 0.6354 | F1 最高，存在权衡 |
-| E11 | ModernBERT-large | 全参数微调 | final dev | 3 | **0.8330** | **0.8448** | **0.8231** | 当前最佳 |
+| E11 | ModernBERT-large | 全参数微调 | final dev | 3 | 0.8330 | 0.8448 | 0.8231 | 3-epoch baseline |
+| E13 | ModernBERT-large | 全参数微调 | final dev | 4 | **0.8369** | **0.8484** | **0.8231** | 当前最佳 |
 
 ## 6. E1：ModernBERT trial smoke test
 
@@ -878,7 +879,7 @@ f81fe16  English-only project snapshot
 
 ### E13：ModernBERT-large 全参数 5 epochs
 
-状态：代码已配置，等待 Kaggle 结果。
+状态：已完成，epoch 4 为新的综合最佳模型。
 
 该实验沿用 E11 的全部设置，只把训练轮数从 3 改为 5：
 
@@ -901,6 +902,41 @@ epochs = 5
 ```
 
 目标是比较 epoch 4、5 是否继续改善 dev 指标，或出现明显过拟合。
+
+### E13 每轮结果
+
+| Epoch | Weighted F1 | SoftCons | HardCons |
+|---:|---:|---:|---:|
+| 1 | 0.7708 | 0.7762 | 0.7473 |
+| 2 | **0.8390** | 0.8303 | 0.8087 |
+| 3 | 0.8169 | **0.8592** | 0.8195 |
+| 4 | 0.8369 | 0.8484 | **0.8231** |
+| 5 | 0.8350 | 0.8484 | **0.8231** |
+
+判断：
+
+- epoch 2 的 Weighted F1 最高，但 SoftCons/HardCons 较低；
+- epoch 3 的 SoftCons 最高，但 F1 明显下降；
+- epoch 4 是三项指标最均衡的 checkpoint；
+- epoch 5 与 epoch 4 的 SoftCons/HardCons 相同，F1 略低；
+- 因此选择 epoch 4，不选 epoch 5。
+
+E13 epoch 4 与 E11 epoch 3 对比：
+
+```text
+Weighted F1：0.8330 -> 0.8369（+0.0039）
+SoftCons：   0.8448 -> 0.8484（+0.0036）
+HardCons：   0.8231 -> 0.8231（持平）
+```
+
+最佳模型：
+
+```text
+/kaggle/working/dico_nli_runs/
+modernbert_large_full_5ep/checkpoints/epoch_4
+```
+
+训练在 epoch 5 已基本饱和，没有继续拉长 epoch 的明显收益。
 
 ### E11：ModernBERT-large 全参数微调
 
