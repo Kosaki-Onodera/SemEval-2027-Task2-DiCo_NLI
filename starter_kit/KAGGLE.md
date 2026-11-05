@@ -222,5 +222,5 @@ python starter_kit/evaluate_bias_calibration.py \
   --max_length 128 \
   --batch_size 4 \
   --compute_dtype float16 \
-  --biases "-1.0,-0.8,-0.6,-0.5,-0.4,-0.3,-0.2,-0.1,0.0,0.1,0.2"
+  --biases="-1.0,-0.8,-0.6,-0.5,-0.4,-0.3,-0.2,-0.1,0.0,0.1,0.2"
 ```
