@@ -938,6 +938,39 @@ modernbert_large_full_5ep/checkpoints/epoch_4
 
 训练在 epoch 5 已基本饱和，没有继续拉长 epoch 的明显收益。
 
+### E13 epoch 4 标签指标
+
+| Label | Precision | Recall | F1 |
+|---|---:|---:|---:|
+| BACKWARD_ENTAILMENT | 0.9081 | 0.8842 | 0.8960 |
+| EQUIVALENCE | 0.8642 | 0.8046 | 0.8333 |
+| FORWARD_ENTAILMENT | 0.8967 | 0.8684 | 0.8824 |
+| NEGATIVE_OTHER | 0.5969 | 0.7264 | 0.6553 |
+
+混淆矩阵：
+
+| Gold \ Pred | BACKWARD | EQUIVALENCE | FORWARD | NEGATIVE |
+|---|---:|---:|---:|---:|
+| BACKWARD | 168 | 7 | 2 | 13 |
+| EQUIVALENCE | 6 | 140 | 7 | 21 |
+| FORWARD | 2 | 5 | 165 | 18 |
+| NEGATIVE | 9 | 10 | 10 | 77 |
+
+单实例正确数：
+
+```text
+168 + 140 + 165 + 77 = 550 / 660
+Accuracy = 0.8333
+```
+
+错误结构：
+
+- 29/106 个 NEGATIVE 被预测为可逆标签；
+- 52 个可逆样本被预测为 NEGATIVE；
+- 模型预测的 NEGATIVE 数量约为 77 + 52 = 129；
+- 因此 N 当前略偏多预测，precision 明显低于 recall；
+- 代价最小的下一步是对该 checkpoint 做 dev logit 的 NEGATIVE 偏置扫描。
+
 ### E11：ModernBERT-large 全参数微调
 
 状态：已完成，epoch 3 为当前最佳系统。
