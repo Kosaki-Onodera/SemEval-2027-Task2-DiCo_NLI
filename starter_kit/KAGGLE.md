@@ -208,3 +208,19 @@ learning rate = 2e-5
 ```
 
 完整 checkpoint 较大，每个约 1.6 GB。
+
+## NEGATIVE logit 校准
+
+对 ModernBERT-large epoch 4：
+
+```bash
+python starter_kit/evaluate_bias_calibration.py \
+  --model_path /kaggle/working/dico_nli_runs/modernbert_large_full_5ep/checkpoints/epoch_4 \
+  --dev_path /kaggle/input/datasets/gongbaoxin/dico-nli-dataset/final_data/dev/dico_nli_dev_track1_participant_labeled.csv \
+  --reference_path /kaggle/input/datasets/gongbaoxin/dico-nli-dataset/final_data/dev/dico_nli_dev_track1_reference.csv \
+  --output_dir /kaggle/working/modernbert_large_epoch4_bias_calibration \
+  --max_length 128 \
+  --batch_size 4 \
+  --compute_dtype float16 \
+  --biases "-1.0,-0.8,-0.6,-0.5,-0.4,-0.3,-0.2,-0.1,0.0,0.1,0.2"
+```

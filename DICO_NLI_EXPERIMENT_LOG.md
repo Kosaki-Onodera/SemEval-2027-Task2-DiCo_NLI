@@ -877,6 +877,33 @@ f81fe16  English-only project snapshot
 
 ## 14. 下一组优先实验
 
+### E14：ModernBERT-large epoch 4 NEGATIVE 偏置校准
+
+状态：代码已实现，等待 Kaggle 结果。
+
+模型只做一次 dev 推理，不重新训练：
+
+```text
+model = modernbert_large_full_5ep/checkpoints/epoch_4
+NEGATIVE bias range = -1.0 to +0.2
+compute dtype = FP16
+max length = 128
+batch size = 4
+```
+
+目标：
+
+- N 当前 precision 低于 recall，略微过度预测 N；
+- 寻找提高 N F1 的负向偏置；
+- 同时观察 Weighted F1、SoftCons、HardCons；
+- 若无三项共同改善的候选，则保留无校准模型。
+
+计划输出：
+
+```text
+/kaggle/working/modernbert_large_epoch4_bias_calibration
+```
+
 ### E13：ModernBERT-large 全参数 5 epochs
 
 状态：已完成，epoch 4 为新的综合最佳模型。
