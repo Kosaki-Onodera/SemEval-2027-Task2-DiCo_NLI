@@ -103,7 +103,8 @@ Rev(EQUIVALENCE)         = EQUIVALENCE
 | E7 | DeBERTa-v2-xxlarge | FP32 LoRA + R-Drop 0.5 | final dev | 3 | 0.4404 | 0.4477 | 0.3394 | 失败，已拒绝 |
 | E9 | E4 + pair consistency | FP32 LoRA，1 epoch | final dev | 1 | **0.7031** | 0.6859 | 0.6354 | F1 最高，存在权衡 |
 | E11 | ModernBERT-large | 全参数微调 | final dev | 3 | 0.8330 | 0.8448 | 0.8231 | 3-epoch baseline |
-| E13 | ModernBERT-large | 全参数微调 | final dev | 4 | **0.8369** | **0.8484** | **0.8231** | 当前最佳 |
+| E13 | ModernBERT-large | 全参数微调 | final dev | 4 | 0.8369 | 0.8484 | 0.8231 | 无校准最佳 |
+| E14 | ModernBERT-large epoch 4 | NEGATIVE bias -0.6 | final dev | 4 | **0.8417** | **0.8700** | **0.8448** | 当前最佳 |
 
 ## 6. E1：ModernBERT trial smoke test
 
@@ -879,7 +880,7 @@ f81fe16  English-only project snapshot
 
 ### E14：ModernBERT-large epoch 4 NEGATIVE 偏置校准
 
-状态：代码已实现，等待 Kaggle 结果。
+状态：已完成；`NEGATIVE bias = -0.6` 为当前最佳配置。
 
 模型只做一次 dev 推理，不重新训练：
 
@@ -903,6 +904,56 @@ batch size = 4
 ```text
 /kaggle/working/modernbert_large_epoch4_bias_calibration
 ```
+
+### E14 实际结果
+
+偏置扫描完成。无校准基准：
+
+```text
+Weighted F1 = 0.8369
+SoftCons    = 0.8484
+HardCons    = 0.8231
+N F1        = 0.6553
+```
+
+最佳候选：
+
+```text
+NEGATIVE bias = -0.6
+```
+
+| Metric | Value |
+|---|---:|
+| Weighted F1 | 0.8417 |
+| SoftCons | 0.8700 |
+| HardCons | 0.8448 |
+| Accuracy | 0.8394 |
+| NEGATIVE precision | 0.6198 |
+| NEGATIVE recall | 0.7075 |
+| NEGATIVE F1 | 0.6608 |
+| N predicted | 121 |
+
+相对无校准：
+
+```text
+Weighted F1：+0.0048
+SoftCons：   +0.0217
+HardCons：   +0.0217
+N F1：       +0.0055
+```
+
+这是一个三项官方指标同时改善的候选，应作为新的主系统配置：
+
+```text
+ModernBERT-large epoch 4
++ NEGATIVE logit bias -0.6
+```
+
+需要注意：
+
+- 偏置是在 660 条 dev 上选择的，仍存在 dev-specific tuning 风险；
+- 后续 test 推理必须固定应用 `-0.6`，不能重新使用无偏置 argmax；
+- 应通过额外 seed 验证该偏置是否稳定。
 
 ### E13：ModernBERT-large 全参数 5 epochs
 
