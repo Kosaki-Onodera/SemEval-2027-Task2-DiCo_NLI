@@ -880,7 +880,7 @@ f81fe16  English-only project snapshot
 
 ### E15：ModernBERT-large seed 43/44 稳定性
 
-状态：代码已实现，等待 Kaggle 结果。
+状态：已完成，三个 seed 的主体性能稳定。
 
 配置与 E13 相同：
 
@@ -906,6 +906,60 @@ seeds = 43,44
 /kaggle/working/dico_nli_runs/modernbert_large_full_seeds43_44/seed_43
 /kaggle/working/dico_nli_runs/modernbert_large_full_seeds43_44/seed_44
 ```
+
+### E15 每轮结果
+
+Seed 43：
+
+| Epoch | Weighted F1 | SoftCons | HardCons |
+|---:|---:|---:|---:|
+| 1 | 0.7558 | 0.8484 | 0.7942 |
+| 2 | 0.7958 | 0.7509 | 0.7292 |
+| 3 | 0.8188 | 0.8195 | 0.7834 |
+| 4 | 0.8290 | 0.8339 | 0.8051 |
+| 5 | **0.8403** | **0.8664** | **0.8339** |
+
+Seed 44：
+
+| Epoch | Weighted F1 | SoftCons | HardCons |
+|---:|---:|---:|---:|
+| 1 | 0.7814 | 0.7690 | 0.7256 |
+| 2 | 0.8051 | 0.8231 | 0.7906 |
+| 3 | 0.8190 | **0.8773** | **0.8412** |
+| 4 | 0.8320 | 0.8231 | 0.7978 |
+| 5 | **0.8333** | 0.8412 | 0.8087 |
+
+按三项指标均衡程度选择的 checkpoint：
+
+```text
+seed 42: epoch 4
+seed 43: epoch 5
+seed 44: epoch 3
+```
+
+三 seed 的均值和样本标准差：
+
+| Metric | Mean | Sample SD |
+|---|---:|---:|
+| Weighted F1 | 0.8321 | 0.0114 |
+| SoftCons | 0.8640 | 0.0146 |
+| HardCons | 0.8327 | 0.0091 |
+
+若统一使用 epoch 5，结果同样稳定：
+
+```text
+Weighted F1 ≈ 0.8362 ± 0.0035
+SoftCons    ≈ 0.8520 ± 0.0129
+HardCons    ≈ 0.8219 ± 0.0128
+```
+
+结论：
+
+- 三个 seed 的性能均稳定在 F1 0.82–0.84 区间；
+- seed 44 的 SoftCons/HardCons 波动相对较大；
+- seed 43 在 epoch 5 仍继续提升；
+- 不能假定所有 seed 的最佳 epoch 都是同一个；
+- NEGATIVE bias 需要分别在 seed 43/44 的最佳 checkpoint 上复验。
 
 完成后分别计算三项指标的均值和标准差，并判断 `NEGATIVE bias=-0.6`
 是否仍适合作为固定后处理。
