@@ -10,6 +10,8 @@ GRADIENT_ACCUMULATION_STEPS="${GRADIENT_ACCUMULATION_STEPS:-16}"
 EPOCHS="${EPOCHS:-5}"
 LEARNING_RATE="${LEARNING_RATE:-2e-5}"
 COMPUTE_DTYPE="${COMPUTE_DTYPE:-float16}"
+SEED="${SEED:-42}"
+SAVE_EACH_EPOCH="${SAVE_EACH_EPOCH:-1}"
 
 KAGGLE_DATA_ROOT="/kaggle/input/datasets/gongbaoxin/dico-nli-dataset/final_data"
 if [[ -z "${DATA_ROOT:-}" ]]; then
@@ -44,6 +46,13 @@ export PYTHONUNBUFFERED=1
 export TOKENIZERS_PARALLELISM=false
 export PYTORCH_CUDA_ALLOC_CONF="${PYTORCH_CUDA_ALLOC_CONF:-expandable_segments:True}"
 
+SAVE_CHECKPOINT_ARGS=()
+if [[ "${SAVE_EACH_EPOCH}" == "1" ]]; then
+    SAVE_CHECKPOINT_ARGS+=(--save_each_epoch)
+else
+    SAVE_CHECKPOINT_ARGS+=(--no-save_each_epoch)
+fi
+
 "${PYTHON_BIN}" -u "${SCRIPT_DIR}/main.py" \
     --model_path "${MODEL_PATH}" \
     --tokenizer_path "${MODEL_PATH}" \
@@ -52,7 +61,7 @@ export PYTORCH_CUDA_ALLOC_CONF="${PYTORCH_CUDA_ALLOC_CONF:-expandable_segments:T
     --do_dev \
     --dev_path "${DEV_PATH}" \
     --no-do_test \
-    --seed 42 \
+    --seed "${SEED}" \
     --dropout 0.1 \
     --warmup_pcrt 0.05 \
     --lr "${LEARNING_RATE}" \
@@ -74,4 +83,4 @@ export PYTORCH_CUDA_ALLOC_CONF="${PYTORCH_CUDA_ALLOC_CONF:-expandable_segments:T
     --results_dir "${OUTPUT_DIR}" \
     --reference_path "${REFERENCE_PATH}" \
     --save_path "${OUTPUT_DIR}" \
-    --save_each_epoch
+    "${SAVE_CHECKPOINT_ARGS[@]}"

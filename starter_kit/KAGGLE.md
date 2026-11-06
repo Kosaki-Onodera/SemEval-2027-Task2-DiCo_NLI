@@ -224,3 +224,18 @@ python starter_kit/evaluate_bias_calibration.py \
   --compute_dtype float16 \
   --biases="-1.0,-0.8,-0.6,-0.5,-0.4,-0.3,-0.2,-0.1,0.0,0.1,0.2"
 ```
+
+## ModernBERT-large seed 43 and 44
+
+```bash
+DATA_ROOT=/kaggle/input/datasets/gongbaoxin/dico-nli-dataset/final_data \
+bash starter_kit/run_modernbert_large_full_seeds43_44.sh
+```
+
+该脚本顺序运行 seed 43 和 seed 44，配置与 E13 的 5-epoch
+ModernBERT-large 全参数实验一致。为了控制输出大小，每个 seed 只保存最终模型：
+
+```text
+/kaggle/working/dico_nli_runs/modernbert_large_full_seeds43_44/seed_43
+/kaggle/working/dico_nli_runs/modernbert_large_full_seeds43_44/seed_44
+```

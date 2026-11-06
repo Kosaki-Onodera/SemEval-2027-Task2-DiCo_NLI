@@ -878,6 +878,38 @@ f81fe16  English-only project snapshot
 
 ## 14. 下一组优先实验
 
+### E15：ModernBERT-large seed 43/44 稳定性
+
+状态：代码已实现，等待 Kaggle 结果。
+
+配置与 E13 相同：
+
+```text
+model = answerdotai/ModernBERT-large
+full fine-tuning
+FP16 AMP + GradScaler
+gradient checkpointing
+micro batch = 1
+gradient accumulation = 16
+max length = 128
+learning rate = 2e-5
+epochs = 5
+seeds = 43,44
+```
+
+为了控制 Kaggle 输出体积，每个 seed 只保存最终模型，不保存每个 epoch 的
+完整 checkpoint。seed 42 的最佳 epoch 4 不重跑。
+
+计划输出：
+
+```text
+/kaggle/working/dico_nli_runs/modernbert_large_full_seeds43_44/seed_43
+/kaggle/working/dico_nli_runs/modernbert_large_full_seeds43_44/seed_44
+```
+
+完成后分别计算三项指标的均值和标准差，并判断 `NEGATIVE bias=-0.6`
+是否仍适合作为固定后处理。
+
 ### E14：ModernBERT-large epoch 4 NEGATIVE 偏置校准
 
 状态：已完成；`NEGATIVE bias = -0.6` 为当前最佳配置。
