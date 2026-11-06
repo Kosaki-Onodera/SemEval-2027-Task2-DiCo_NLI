@@ -166,6 +166,7 @@ starter_kit/
 | `--scl_per_class_queue_size` | `int` | No | Maximum queue size for each label. Default: `128`.                                                                    |
 | `--scl_initial_per_class` | `int` | No    | Current-model samples used to prefill each class at epoch start. Default: `32`.                                        |
 | `--pair_consistency_weight` | `float` | No | Jensen-Shannon reversal-consistency weight for paired second-stage training.                                         |
+| `--negative_mass_penalty_weight` | `float` | No | Penalty weight for NEGATIVE probability on gold reversible pairs.                                             |
 | `--use_lora`        | `bool`  | No       | Wrap the classification model with a PEFT LoRA adapter.                                                                  |
 | `--load_in_4bit`    | `bool`  | No       | Load the base model in 4-bit NF4 for QLoRA. Requires `--use_lora`.                                                       |
 | `--lora_r`          | `int`   | No       | LoRA rank. Default: `16`.                                                                                                 |

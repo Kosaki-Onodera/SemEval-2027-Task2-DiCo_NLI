@@ -878,6 +878,52 @@ f81fe16  English-only project snapshot
 
 ## 14. 下一组优先实验
 
+### E17：ModernBERT-large 全参数一致性续训
+
+状态：代码已实现并通过 smoke test，等待 Kaggle 结果。
+
+这不是 LoRA 的第二阶段，而是从完整全参数 checkpoint 继续训练：
+
+```text
+base checkpoint = modernbert_large_full_5ep/checkpoints/epoch_4
+model = ModernBERT-large
+training = full fine-tuning
+epochs = 1
+learning rate = 1e-5
+pair consistency weight = 0.05
+NEGATIVE mass penalty weight = 0.05
+```
+
+损失：
+
+```text
+CE(A, B) + CE(B, A)
++ 0.05 * JSD(P(A,B), Rev(P(B,A)))
++ 0.05 * NEGATIVE-mass penalty
+```
+
+训练单位是同一 `reverse_pair_id` 的两条有序实例。JSD 与 N mass penalty
+只作用于 gold 可逆 pair；`NEGATIVE_OTHER` 只参与 CE。
+
+计划输出：
+
+```text
+/kaggle/working/dico_nli_runs/modernbert_large_consistency_continuation
+```
+
+本地 ModernBERT-base smoke test 已验证完整模型续训、JSD、N mass penalty
+和联合反向传播。smoke test 得到：
+
+```text
+Groups = 461
+Reversal pairs = 336
+Singles = 125
+Average CE + auxiliary loss = 1.3014
+Average JSD = 0.0239
+Average N mass loss = 0.1696
+Peak memory = 2.90 GiB
+```
+
 ### E16：Seed 43/44 NEGATIVE 偏置校准
 
 状态：已完成。结果显示最优偏置明显依赖 seed。

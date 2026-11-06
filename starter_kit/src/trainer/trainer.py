@@ -330,6 +330,9 @@ class Trainer:
         pair_consistency_weight = float(
             self.params.get("pair_consistency_weight", 0.0)
         )
+        negative_mass_penalty_weight = float(
+            self.params.get("negative_mass_penalty_weight", 0.0)
+        )
         scl_queues: List[deque] = [
             deque(maxlen=scl_per_class_queue_size)
             for _ in self.labels
@@ -374,6 +377,7 @@ class Trainer:
         )
         print(f"Configured total SCL queue size: {scl_queue_size}")
         print(f"Pair consistency weight: {pair_consistency_weight}")
+        print(f"NEGATIVE mass penalty weight: {negative_mass_penalty_weight}")
         print(
             "Effective batch size: "
             f"{int(self.params['batch_size']) * gradient_accumulation_steps}"
@@ -393,7 +397,9 @@ class Trainer:
             epoch_scl_loss = 0.0
             scl_steps = 0
             epoch_consistency_loss = 0.0
+            epoch_negative_mass_loss = 0.0
             consistency_steps = 0
+            negative_mass_steps = 0
             optimizer.zero_grad(set_to_none=True)
 
             for batch_index, batch in enumerate(tqdm(self.train_dataloader), start=1):
@@ -456,8 +462,8 @@ class Trainer:
                                 (feature, label_index, pair_id)
                             )
 
-                    if pair_consistency_weight > 0:
-                        consistency_loss = self._reversal_consistency_loss(
+                    if pair_consistency_weight > 0 or negative_mass_penalty_weight > 0:
+                        consistency_loss, negative_mass_loss = self._reversal_consistency_losses(
                             logits=outputs.logits,
                             pair_groups=batch["pair_groups"],
                         )
@@ -465,6 +471,10 @@ class Trainer:
                             loss = loss + pair_consistency_weight * consistency_loss
                             epoch_consistency_loss += consistency_loss.item()
                             consistency_steps += 1
+                        if negative_mass_loss is not None and negative_mass_penalty_weight > 0:
+                            loss = loss + negative_mass_penalty_weight * negative_mass_loss
+                            epoch_negative_mass_loss += negative_mass_loss.item()
+                            negative_mass_steps += 1
 
                 epoch_loss += loss.item()
                 scaled_loss = self.scaler.scale(loss) / gradient_accumulation_steps
@@ -491,6 +501,11 @@ class Trainer:
                 print(
                     f"Epoch {epoch + 1} average reversal consistency loss: "
                     f"{epoch_consistency_loss / consistency_steps:.4f}"
+                )
+            if negative_mass_penalty_weight > 0 and negative_mass_steps > 0:
+                print(
+                    f"Epoch {epoch + 1} average NEGATIVE mass loss: "
+                    f"{epoch_negative_mass_loss / negative_mass_steps:.4f}"
                 )
 
             if self.params["do_dev"]:
@@ -566,18 +581,19 @@ class Trainer:
         )
         return 0.5 * (forward_kl + reverse_kl)
 
-    def _reversal_consistency_loss(
+    def _reversal_consistency_losses(
         self,
         *,
         logits: torch.Tensor,
         pair_groups: List[Dict[str, Union[int, bool]]],
-    ) -> Optional[torch.Tensor]:
+    ) -> Tuple[Optional[torch.Tensor], Optional[torch.Tensor]]:
         reversible_labels = [
             "BACKWARD_ENTAILMENT",
             "EQUIVALENCE",
             "FORWARD_ENTAILMENT",
         ]
         class_names = [str(label) for label in self.labels]
+        negative_index = class_names.index("NEGATIVE_OTHER")
         reversible_indices = [
             class_names.index(label)
             for label in reversible_labels
@@ -594,6 +610,7 @@ class Trainer:
         ]
 
         pair_losses = []
+        negative_mass_losses = []
         for group in pair_groups:
             if not bool(group["is_reversal_pair"]):
                 continue
@@ -621,10 +638,27 @@ class Trainer:
             pair_losses.append(
                 0.5 * (first_to_midpoint + second_to_midpoint)
             )
+            full_probabilities = torch.softmax(
+                logits[start:end].float(),
+                dim=-1,
+            )
+            negative_probabilities = full_probabilities[:, negative_index].clamp(
+                max=1.0 - 1e-6
+            )
+            negative_mass_losses.append(
+                -0.5
+                * (
+                    torch.log1p(-negative_probabilities[0])
+                    + torch.log1p(-negative_probabilities[1])
+                )
+            )
 
         if not pair_losses:
-            return None
-        return torch.stack(pair_losses).mean()
+            return None, None
+        return (
+            torch.stack(pair_losses).mean(),
+            torch.stack(negative_mass_losses).mean(),
+        )
 
     def _refresh_scl_queues(
         self,

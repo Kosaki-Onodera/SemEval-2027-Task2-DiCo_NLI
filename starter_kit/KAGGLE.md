@@ -239,3 +239,29 @@ ModernBERT-large 全参数实验一致。为了控制输出大小，每个 seed 
 /kaggle/working/dico_nli_runs/modernbert_large_full_seeds43_44/seed_43
 /kaggle/working/dico_nli_runs/modernbert_large_full_seeds43_44/seed_44
 ```
+
+## ModernBERT-large full-model consistency continuation
+
+从当前最佳 epoch 4 完整模型继续训练一个 epoch：
+
+```bash
+BASE_MODEL_PATH=/kaggle/working/dico_nli_runs/modernbert_large_full_5ep/checkpoints/epoch_4 \
+DATA_ROOT=/kaggle/input/datasets/gongbaoxin/dico-nli-dataset/final_data \
+bash starter_kit/run_modernbert_large_consistency_continuation.sh
+```
+
+默认配置：
+
+```text
+full fine-tuning
+pair consistency weight = 0.05
+NEGATIVE mass penalty weight = 0.05
+learning rate = 1e-5
+epochs = 1
+```
+
+输出：
+
+```text
+/kaggle/working/dico_nli_runs/modernbert_large_consistency_continuation
+```
